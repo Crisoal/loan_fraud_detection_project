@@ -3,7 +3,6 @@
 import uuid
 from django.db import models
 from django.contrib.auth.models import User
-from .fraud_detection_engine import detect_fraudulent_application
 
 class VisitorID(models.Model):
     """
@@ -26,21 +25,17 @@ class LoanApplication(models.Model):
         ("flagged", "Flagged for Review"),
         ("fraud_detected", "Fraud Detected"),
     ]
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     visitor_id = models.ForeignKey('VisitorID', on_delete=models.CASCADE, null=True, blank=True)
-    
     full_name = models.CharField(max_length=255)
     email = models.EmailField()
     phone = models.CharField(max_length=20)
     amount_requested = models.DecimalField(max_digits=10, decimal_places=2)
     purpose = models.TextField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
-    
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     device_fingerprint = models.CharField(max_length=255, unique=False, null=True, blank=True)
-    
     application_date = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
@@ -48,9 +43,10 @@ class LoanApplication(models.Model):
         Before saving a loan application, check for fraud.
         """
         super().save(*args, **kwargs)
+        from .fraud_detection_engine import detect_fraudulent_application  # Import here to avoid circular import
         if detect_fraudulent_application(self):
             self.status = "flagged"
-            super().save(*args, **kwargs)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Loan {self.id} - {self.full_name} ({self.status})"

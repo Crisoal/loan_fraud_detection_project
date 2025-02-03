@@ -10,9 +10,9 @@ class FraudAlertAdmin(admin.ModelAdmin):
 
 @admin.register(LoanApplication)
 class LoanApplicationAdmin(admin.ModelAdmin):
-    list_display = ("full_name", "email", "amount_requested", "status", "created_at")
+    list_display = ("full_name", "email", "amount_requested", "status", "application_date")  # Changed from 'created_at' to 'application_date'
     search_fields = ("full_name", "email")
-    list_filter = ("status", "created_at")
+    list_filter = ("status", "application_date")  # Changed from 'created_at' to 'application_date'
 
 @admin.register(VisitorID)
 class VisitorIDAdmin(admin.ModelAdmin):

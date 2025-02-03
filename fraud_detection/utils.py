@@ -70,3 +70,44 @@ def detect_fraud(loan_application):
         return True  # Fraud detected
 
     return False  # No fraud detected
+
+def store_visitor_data(request):
+    """
+    Stores visitor data and returns the visitor ID.
+    """
+    client_ip = get_client_ip(request)
+    user_agent = request.META.get("HTTP_USER_AGENT", "Unknown")
+    
+    # Get or create visitor ID
+    visitor_id = get_fingerprint_visitor_id({
+        "ip": client_ip,
+        "user_agent": user_agent
+    })
+    
+    if visitor_id:
+        visitor, created = VisitorID.objects.get_or_create(
+            visitor_id=visitor_id,
+            defaults={
+                "ip_address": client_ip,
+                "device_fingerprint": request.headers.get("Device-Fingerprint", None)
+            }
+        )
+        return visitor_id
+    
+    return None
+
+def flag_suspicious_application(loan_app):
+    """
+    Checks if a loan application is suspicious based on fraud patterns.
+    """
+    fraud_detected = detect_fraudulent_application(loan_app)
+    if fraud_detected:
+        # Send email notification
+        send_mail(
+            "Suspicious Loan Application Detected",
+            f"Loan application {loan_app.id} has been flagged for fraud review.",
+            settings.DEFAULT_FROM_EMAIL,
+            [settings.ADMIN_EMAIL],
+            fail_silently=True,
+        )
+    return fraud_detected
