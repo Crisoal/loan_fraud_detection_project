@@ -61,7 +61,7 @@ def detect_fraud(loan_application):
         # Send an email notification for flagged applications
         send_mail(
             "Fraud Alert - Loan Application",
-            f"A loan application has been flagged for fraud. Details:\n\n{loan_application}\n\nReasons: {', '.join(fraud_reasons)}",
+            f"A loan application has been flagged for fraud. Details:\n\nLoan ID: {loan_application.id}\nFull Name: {loan_application.full_name}\nAmount Requested: {loan_application.amount_requested}\n\nReasons: {', '.join(fraud_reasons)}",
             settings.DEFAULT_FROM_EMAIL,
             [settings.ADMIN_EMAIL],
             fail_silently=True,
@@ -70,6 +70,7 @@ def detect_fraud(loan_application):
         return True  # Fraud detected
 
     return False  # No fraud detected
+
 
 def store_visitor_data(request):
     """
@@ -93,8 +94,10 @@ def store_visitor_data(request):
             }
         )
         return visitor_id
-    
+    else:
+        logger.warning(f"Failed to retrieve visitor_id for IP {client_ip} and user agent {user_agent}")
     return None
+
 
 def flag_suspicious_application(loan_app):
     """

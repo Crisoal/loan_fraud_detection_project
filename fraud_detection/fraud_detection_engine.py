@@ -36,6 +36,7 @@ def calculate_fraud_score(loan_application):
     return fraud_score, reasons
 
 def detect_fraudulent_application(loan_application):
+    from .models import LoanApplication  # Import here to avoid circular import
     """
     Flags fraudulent applications based on a dynamic fraud scoring system.
     """

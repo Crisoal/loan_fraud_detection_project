@@ -42,11 +42,11 @@ class LoanApplication(models.Model):
         """
         Before saving a loan application, check for fraud.
         """
-        super().save(*args, **kwargs)
         from .fraud_detection_engine import detect_fraudulent_application  # Import here to avoid circular import
         if detect_fraudulent_application(self):
             self.status = "flagged"
-        super().save(*args, **kwargs)
+        
+        super().save(*args, **kwargs)  # Only call once after modification
 
     def __str__(self):
         return f"Loan {self.id} - {self.full_name} ({self.status})"
