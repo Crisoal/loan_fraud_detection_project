@@ -1,63 +1,60 @@
 # fraud_detection/services.py
 
 import os
-from django.utils.timezone import now
-from django.db.models import Count, Q
+from django.db.models import Q
 from dotenv import load_dotenv
 from .models import LoanApplication, VisitorID, FraudAlert
+from .fraud_detection_engine import detect_fraudulent_application
 
 # Load environment variables
 load_dotenv()
 
-FRAUD_THRESHOLD_APPLICATIONS = int(os.getenv("FRAUD_THRESHOLD_APPLICATIONS", 3))  # e.g., 3 applications from same device
-FRAUD_THRESHOLD_PROFILES = int(os.getenv("FRAUD_THRESHOLD_PROFILES", 2))  # e.g., 2+ profiles from same Visitor ID
+FRAUD_THRESHOLD_APPLICATIONS = int(os.getenv("FRAUD_THRESHOLD_APPLICATIONS", 3))
+FRAUD_THRESHOLD_PROFILES = int(os.getenv("FRAUD_THRESHOLD_PROFILES", 2))
 
-def detect_fraudulent_application(loan_application):
+def check_for_fraud_and_flag(loan_application):
     """
-    Detects potential fraudulent loan applications based on:
-    - Multiple applications from the same Visitor ID.
-    - Multiple fake profiles linked to a single Visitor ID.
-    - Repeated use of the same payment method.
+    Runs fraud detection on a loan application and flags it if necessary.
     """
-    visitor_id = loan_application.visitor_id
-    user = loan_application.user
-    ip_address = loan_application.ip_address
+    fraud_detected, reasons = detect_fraudulent_application(loan_application)
 
-    fraud_reasons = []
-
-    # 1️⃣ Detect multiple loan applications from the same Visitor ID
-    recent_apps = LoanApplication.objects.filter(visitor_id=visitor_id).count()
-    if recent_apps > FRAUD_THRESHOLD_APPLICATIONS:
-        fraud_reasons.append(f"Visitor ID {visitor_id.visitor_id} submitted {recent_apps} loan applications.")
-
-    # 2️⃣ Detect multiple fake profiles linked to the same Visitor ID
-    linked_profiles = VisitorID.objects.filter(visitor_id=visitor_id.visitor_id).count()
-    if linked_profiles > FRAUD_THRESHOLD_PROFILES:
-        fraud_reasons.append(f"Visitor ID {visitor_id.visitor_id} linked to {linked_profiles} different users.")
-
-    # 3️⃣ Detect multiple users using the same payment method (if stored)
-    if hasattr(loan_application, "payment_method") and loan_application.payment_method:
-        duplicate_payments = LoanApplication.objects.filter(payment_method=loan_application.payment_method).exclude(user=user).count()
-        if duplicate_payments > 1:
-            fraud_reasons.append(f"Payment method {loan_application.payment_method} used by multiple users.")
-
-    # 4️⃣ Flag suspicious IPs (Optional)
-    similar_ip_apps = LoanApplication.objects.filter(ip_address=ip_address).count()
-    if similar_ip_apps > FRAUD_THRESHOLD_APPLICATIONS:
-        fraud_reasons.append(f"IP {ip_address} used for {similar_ip_apps} loan applications.")
-
-    # If any fraud reasons are found, flag the application
-    if fraud_reasons:
-        loan_application.status = "flagged"  # Flag application for manual review
+    if fraud_detected:
+        loan_application.status = "flagged"
         loan_application.save()
 
-        # Create a fraud alert
         FraudAlert.objects.create(
             loan_application=loan_application,
-            visitor_id=visitor_id,
-            reason=" | ".join(fraud_reasons),
+            visitor_id=loan_application.visitor_id,
+            reason=" | ".join(reasons),
         )
 
         return True  # Fraud detected
 
     return False  # No fraud detected
+
+def get_loan_statistics():
+    """
+    Retrieves statistics for loan applications, such as flagged and approved applications.
+    """
+    total_loans = LoanApplication.objects.count()
+    flagged_loans = LoanApplication.objects.filter(status="flagged").count()
+    approved_loans = LoanApplication.objects.filter(status="approved").count()
+
+    return {
+        "total_loans": total_loans,
+        "flagged_loans": flagged_loans,
+        "approved_loans": approved_loans,
+    }
+
+def get_visitor_fraud_summary(visitor_id):
+    """
+    Checks if a visitor has been involved in fraudulent activities.
+    """
+    flagged_loans = LoanApplication.objects.filter(visitor_id=visitor_id, status="flagged").exists()
+    fraud_alerts = FraudAlert.objects.filter(visitor_id=visitor_id).exists()
+
+    return {
+        "visitor_id": visitor_id.visitor_id,
+        "flagged_loans": flagged_loans,
+        "fraud_alerts": fraud_alerts,
+    }

@@ -3,7 +3,7 @@
 import uuid
 from django.db import models
 from django.contrib.auth.models import User
-from .services import detect_fraudulent_application
+from .fraud_detection_engine import detect_fraudulent_application
 
 class VisitorID(models.Model):
     """
@@ -12,7 +12,7 @@ class VisitorID(models.Model):
     visitor_id = models.CharField(max_length=255, unique=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
-    device_fingerprint = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    device_fingerprint = models.CharField(max_length=255, unique=False, null=True, blank=True)
     last_seen = models.DateTimeField(auto_now=True)
 
     def __str__(self):
@@ -67,28 +67,3 @@ class FraudAlert(models.Model):
 
     def __str__(self):
         return f"Fraud Alert for Loan {self.loan_application.id} - {self.reason[:30]}"
-
-
-# Utility function to detect fraud
-def detect_fraud(loan_application):
-    fraud_score = 0
-    reasons = []
-    
-    # Check multiple applications from the same Visitor ID
-    if LoanApplication.objects.filter(visitor_id=loan_application.visitor_id).count() > 1:
-        fraud_score += 30
-        reasons.append("Multiple applications from the same visitor ID")
-    
-    # Check multiple applications from the same device fingerprint
-    if LoanApplication.objects.filter(device_fingerprint=loan_application.device_fingerprint).count() > 1:
-        fraud_score += 40
-        reasons.append("Multiple applications from the same device fingerprint")
-    
-    # Check multiple users using the same payment method (simulated check)
-    if LoanApplication.objects.filter(ip_address=loan_application.ip_address).count() > 1:
-        fraud_score += 30
-        reasons.append("Multiple applications from the same IP address")
-    
-    # Flag loan application if fraud score exceeds threshold
-    if fraud_score > 50:
-        FraudAlert.objects.create(loan_application=loan_application, reason="; ".join(reasons))

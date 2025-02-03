@@ -5,9 +5,10 @@ from django.http import JsonResponse
 from .models import VisitorID, LoanApplication
 from django.views.decorators.csrf import csrf_exempt
 from .forms import LoanApplicationForm
-from .utils import get_visitor_id, store_visitor_data, flag_suspicious_application
+from .utils import get_fingerprint_visitor_id, store_visitor_data, flag_suspicious_application
 from .services import detect_fraudulent_application
 import json
+
 
 def track_visitor(request):
     """
@@ -37,7 +38,7 @@ def get_client_ip(request):
 
 
 @csrf_exempt
-def get_visitor_id(request):
+def get_fingerprint_visitor_id(request):
     """
     API Endpoint: Fetches and stores Visitor ID for fraud detection.
     """
