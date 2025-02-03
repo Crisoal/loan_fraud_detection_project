@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+
+{% block title %}Fraud Alerts{% endblock %}
+
+{% block content %}
+<h3 class="text-center">Fraud Alerts</h3>
+
+<div class="list-group mt-3">
+    {% for alert in fraud_alerts %}
+    <div class="list-group-item list-group-item-action">
+        <h5>Visitor ID: {{ alert.visitor_id }}</h5>
+        <p>Reason: {{ alert.reason }}</p>
+        <small>Timestamp: {{ alert.timestamp }}</small>
+    </div>
+    {% empty %}
+    <p class="text-center">No fraud alerts detected.</p>
+    {% endfor %}
+</div>
+
+{% endblock %}

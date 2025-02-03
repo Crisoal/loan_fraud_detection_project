@@ -5,7 +5,9 @@ from django.http import JsonResponse
 from .models import VisitorID, LoanApplication
 from django.views.decorators.csrf import csrf_exempt
 from .forms import LoanApplicationForm
-from .utils import get_visitor_id, store_visitor_data
+from .utils import get_visitor_id, store_visitor_data, flag_suspicious_application
+from .services import detect_fraudulent_application
+import json
 
 def track_visitor(request):
     """
@@ -54,29 +56,27 @@ def apply_for_loan(request):
     """
     if request.method == "POST":
         form = LoanApplicationForm(request.POST)
+
         if form.is_valid():
-            visitor_id = store_visitor_data(request)  # Capture Visitor ID
-            
-            # Count loan applications linked to this Visitor ID
-            fraud_suspected = False
-            if visitor_id:
-                existing_applications = LoanApplication.objects.filter(visitor_id__visitor_id=visitor_id).count()
-                if existing_applications >= 2:  # Flag if multiple applications exist
-                    fraud_suspected = True
-            
-            # Save loan application
+            visitor_id = store_visitor_data(request)
+            visitor_obj, _ = VisitorID.objects.get_or_create(visitor_id=visitor_id)
+
             loan_app = form.save(commit=False)
-            loan_app.visitor_id = VisitorID.objects.filter(visitor_id=visitor_id).first()
-            loan_app.status = "flagged" if fraud_suspected else "pending"
+            loan_app.visitor_id = visitor_obj
+            loan_app.ip_address = request.META.get("REMOTE_ADDR")
+            loan_app.device_fingerprint = request.headers.get("Device-Fingerprint", None)
             loan_app.save()
 
+            # 🔥 Automatically check for fraud
+            fraud_detected = flag_suspicious_application(loan_app)
+
             message = "Application submitted successfully."
-            if fraud_suspected:
+            if fraud_detected:
                 message = "Application submitted but flagged for fraud review."
-            
-            return JsonResponse({"message": message}, status=200)
-    
+
+            return JsonResponse({"message": message}, status=202 if fraud_detected else 200)
+
     else:
         form = LoanApplicationForm()
-    
+
     return render(request, "loan_form.html", {"form": form})
