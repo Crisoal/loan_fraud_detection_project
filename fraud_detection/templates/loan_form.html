@@ -42,14 +42,4 @@
     </div>
 </div>
 
-<script>
-    document.addEventListener("DOMContentLoaded", function() {
-        fetch("{% url 'get_visitor_id' %}")
-        .then(response => response.json())
-        .then(data => {
-            document.getElementById("visitor_id").value = data.visitor_id;
-        });
-    });
-</script>
-
 {% endblock %}

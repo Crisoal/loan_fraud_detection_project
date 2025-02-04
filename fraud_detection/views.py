@@ -50,6 +50,13 @@ def get_fingerprint_visitor_id(request):
 
     return JsonResponse({"error": "Invalid request method"}, status=405)
 
+def loan_form_home(request):
+    """
+    Renders the loan application form as the homepage.
+    """
+    form = LoanApplicationForm()  # Create an empty form for display
+    return render(request, "loan_form.html", {"form": form})
+
 
 def apply_for_loan(request):
     """
