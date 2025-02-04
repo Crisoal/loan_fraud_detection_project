@@ -11,11 +11,20 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 from .models import LoanApplication, VisitorID, FraudAlert
 from .fraud_detection_engine import detect_fraudulent_application
 
+
 # Load API credentials
 FINGERPRINT_API_KEY = os.getenv("FINGERPRINT_API_KEY")
 FINGERPRINT_API_URL = os.getenv("FINGERPRINT_API_URL")
 
 logger = logging.getLogger(__name__)
+
+def get_client_ip(request):
+    """Extracts client IP address from request headers."""
+    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if x_forwarded_for:
+        return x_forwarded_for.split(",")[0]
+    return request.META.get("REMOTE_ADDR")
+
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
 def get_fingerprint_visitor_id(device_info):

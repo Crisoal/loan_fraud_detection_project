@@ -5,7 +5,7 @@ from django.http import JsonResponse
 from .models import VisitorID, LoanApplication
 from django.views.decorators.csrf import csrf_exempt
 from .forms import LoanApplicationForm
-from .utils import get_fingerprint_visitor_id, store_visitor_data, flag_suspicious_application
+from .utils import get_fingerprint_visitor_id, store_visitor_data, flag_suspicious_application, get_client_ip
 from .services import detect_fraudulent_application
 import json
 
@@ -27,14 +27,6 @@ def track_visitor(request):
         return JsonResponse({"message": "Visitor tracked successfully", "visitor_id": visitor.visitor_id})
 
     return JsonResponse({"error": "Could not retrieve visitor ID"}, status=400)
-
-
-def get_client_ip(request):
-    """Extracts client IP address from request headers."""
-    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-    if x_forwarded_for:
-        return x_forwarded_for.split(",")[0]
-    return request.META.get("REMOTE_ADDR")
 
 
 @csrf_exempt
