@@ -36,16 +36,11 @@ def calculate_fraud_score(loan_application):
     return fraud_score, reasons
 
 def detect_fraudulent_application(loan_application):
-    from .models import LoanApplication  # Import here to avoid circular import
-    """
-    Flags fraudulent applications based on a dynamic fraud scoring system.
-    """
+    from .models import FraudAlert  # Importing FraudAlert here to avoid circular import
+
     fraud_score, reasons = calculate_fraud_score(loan_application)
     
-    # Flagging loan application if fraud score exceeds threshold
     if fraud_score > FRAUD_SCORE_THRESHOLD:
-        from .models import FraudAlert  # Importing FraudAlert here to avoid circular import
-
         # Create a fraud alert linked to the loan application
         FraudAlert.objects.create(
             loan_application=loan_application,
@@ -53,12 +48,12 @@ def detect_fraudulent_application(loan_application):
             reason=" | ".join(reasons),
         )
         
-        # Mark the loan application as flagged
+        # Set status but DO NOT save inside this function
         loan_application.status = "flagged"
-        loan_application.save()
         return True  # Fraud detected
     
     return False  # No fraud detected
+
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def get_fingerprint_visitor_id(data):

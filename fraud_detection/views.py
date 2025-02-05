@@ -2,12 +2,14 @@
 
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
+from django.conf import settings
 from .models import VisitorID, LoanApplication
 from django.views.decorators.csrf import csrf_exempt
 from .forms import LoanApplicationForm
 from .utils import get_fingerprint_visitor_id, store_visitor_data, flag_suspicious_application, get_client_ip
 from .services import detect_fraudulent_application
 import json
+from django.utils import timezone
 
 
 def track_visitor(request):
@@ -50,41 +52,56 @@ def loan_form_home(request):
     Renders the loan application form as the homepage.
     """
     form = LoanApplicationForm()  # Create an empty form for display
-    return render(request, "loan_form.html", {"form": form})
+    context = {
+        "form": form,
+        "fingerprintjs_public_key": settings.FINGERPRINTJS_PUBLIC_KEY,  # Pass the public key
+    }
+    return render(request, "loan_form.html", context)
 
 
+# views.py
 @csrf_exempt
 def apply_for_loan(request):
     if request.method == "POST":
         form = LoanApplicationForm(request.POST)
         if form.is_valid():
-            # Get or create visitor record
-            visitor_id = store_visitor_data(request)
-            visitor_obj = VisitorID.objects.get(ip_address=get_client_ip(request))
-            
+            # Get visitor data from form
+            visitor_id = request.POST.get('visitor_id')
+            device_fingerprint = request.POST.get('device_fingerprint')
+
+            # Create or update visitor record
+            client_ip = get_client_ip(request)
+            visitor, created = VisitorID.objects.get_or_create(
+                ip_address=client_ip,
+                defaults={
+                    "visitor_id": visitor_id,
+                    "device_fingerprint": device_fingerprint,
+                    "last_seen": timezone.now()
+                }
+            )
+
+            if not visitor.visitor_id and visitor_id:
+                visitor.visitor_id = visitor_id
+                visitor.save()
+
             # Save the form with visitor data
             loan_app = form.save(commit=False)
-            loan_app.visitor_id = visitor_obj
-            loan_app.ip_address = request.META.get("REMOTE_ADDR")
-            loan_app.device_fingerprint = request.headers.get("Device-Fingerprint", None)
+            loan_app.visitor_id = visitor
+            loan_app.ip_address = client_ip
             
-            # Save the application
+            # Ensure device fingerprint is saved
+            if device_fingerprint:
+                loan_app.device_fingerprint = device_fingerprint
+
             loan_app.save()
-            
-            # Check for fraud
-            fraud_detected = flag_suspicious_application(loan_app)
-            
-            message = "Application submitted successfully."
-            if fraud_detected:
-                message = "Application submitted but flagged for fraud review."
-                
-            return JsonResponse({"message": message}, 
-                              status=202 if fraud_detected else 200)
-        else:
-            return JsonResponse({"error": "Invalid form data"}, status=400)
-    else:
-        form = LoanApplicationForm()
-        return render(request, "loan_form.html", {"form": form})
 
+            # # Check for fraud
+            # fraud_detected = flag_suspicious_application(loan_app)
+            
+            return JsonResponse({
+                "message": "Application submitted successfully.",
+                # "fraud_detected": fraud_detected
+            }, status=201)
 
-        
+        return JsonResponse({"error": "Invalid form data"}, status=400)
+    return JsonResponse({"error": "Invalid request method"}, status=405)   

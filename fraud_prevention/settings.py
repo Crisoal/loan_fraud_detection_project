@@ -21,6 +21,8 @@ ALLOWED_HOSTS = ["*"]  # Change this in production
 # URL CONFIGURATION
 ROOT_URLCONF = "fraud_prevention.urls"
 
+FINGERPRINTJS_PUBLIC_KEY = os.getenv('FINGERPRINTJS_PUBLIC_KEY')
+
 # Database Configuration
 DATABASES = {
     "default": {

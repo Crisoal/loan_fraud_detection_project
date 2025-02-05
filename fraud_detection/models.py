@@ -41,8 +41,9 @@ class LoanApplication(models.Model):
     def save(self, *args, **kwargs):
         """Before saving a loan application, check for fraud."""
         from .fraud_detection_engine import detect_fraudulent_application
-        if detect_fraudulent_application(self):
-            self.status = "flagged"
+        if not self.pk:  # Only check fraud for new applications
+            if detect_fraudulent_application(self):
+                self.status = "flagged"
         super().save(*args, **kwargs)
 
     def __str__(self):
