@@ -83,29 +83,40 @@ def detect_fraud(loan_application):
 
 def store_visitor_data(request):
     """
-    Stores visitor data and returns the visitor ID.
+    Stores visitor data and retrieves fingerprint.
     """
-    client_ip = get_client_ip(request)
-    user_agent = request.META.get("HTTP_USER_AGENT", "Unknown")
-    
-    # Get or create visitor ID
-    visitor_id = get_fingerprint_visitor_id({
-        "ip": client_ip,
-        "user_agent": user_agent
-    })
-    
-    if visitor_id:
+    try:
+        client_ip = get_client_ip(request)
+        user_agent = request.META.get("HTTP_USER_AGENT", "Unknown")
+        
+        # Verify API credentials
+        if not FINGERPRINT_API_KEY or not FINGERPRINT_API_URL:
+            logger.error("Fingerprint API credentials not configured")
+            raise ValueError("Fingerprint API not configured")
+        
+        # Get visitor ID from Fingerprint API
+        visitor_id = get_fingerprint_visitor_id({
+            "ip": client_ip,
+            "user_agent": user_agent
+        })
+        
+        # Store visitor data
         visitor, created = VisitorID.objects.get_or_create(
-            visitor_id=visitor_id,
+            ip_address=client_ip,
             defaults={
-                "ip_address": client_ip,
+                "visitor_id": visitor_id,
                 "device_fingerprint": request.headers.get("Device-Fingerprint", None)
             }
         )
-        return visitor_id
-    else:
-        logger.warning(f"Failed to retrieve visitor_id for IP {client_ip} and user agent {user_agent}")
-    return None
+        
+        if not visitor.visitor_id and visitor_id:
+            visitor.visitor_id = visitor_id
+            visitor.save()
+            
+        return visitor.visitor_id
+    except Exception as e:
+        logger.error(f"Failed to store visitor data: {str(e)}")
+        raise
 
 
 def flag_suspicious_application(loan_app):

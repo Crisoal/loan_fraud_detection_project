@@ -35,11 +35,14 @@ def get_fingerprint_visitor_id(request):
     API Endpoint: Fetches and stores Visitor ID for fraud detection.
     """
     if request.method == "POST":
-        visitor_id = store_visitor_data(request)
-        if visitor_id:
-            return JsonResponse({"visitor_id": visitor_id}, status=200)
-        return JsonResponse({"error": "Unable to retrieve visitor ID"}, status=400)
-
+        try:
+            visitor_id = store_visitor_data(request)
+            if visitor_id:
+                return JsonResponse({"visitor_id": visitor_id}, status=200)
+            return JsonResponse({"error": "Unable to retrieve visitor ID"}, status=400)
+        except Exception as e:
+            logger.error(f"Error processing visitor ID request: {str(e)}")
+            return JsonResponse({"error": "Internal server error"}, status=500)
     return JsonResponse({"error": "Invalid request method"}, status=405)
 
 def loan_form_home(request):
@@ -50,33 +53,38 @@ def loan_form_home(request):
     return render(request, "loan_form.html", {"form": form})
 
 
+@csrf_exempt
 def apply_for_loan(request):
-    """
-    Handles loan application form submission and fraud detection.
-    """
     if request.method == "POST":
         form = LoanApplicationForm(request.POST)
-
         if form.is_valid():
+            # Get or create visitor record
             visitor_id = store_visitor_data(request)
-            visitor_obj, _ = VisitorID.objects.get_or_create(visitor_id=visitor_id)
-
+            visitor_obj = VisitorID.objects.get(ip_address=get_client_ip(request))
+            
+            # Save the form with visitor data
             loan_app = form.save(commit=False)
             loan_app.visitor_id = visitor_obj
             loan_app.ip_address = request.META.get("REMOTE_ADDR")
             loan_app.device_fingerprint = request.headers.get("Device-Fingerprint", None)
+            
+            # Save the application
             loan_app.save()
-
-            # 🔥 Automatically check for fraud
+            
+            # Check for fraud
             fraud_detected = flag_suspicious_application(loan_app)
-
+            
             message = "Application submitted successfully."
             if fraud_detected:
                 message = "Application submitted but flagged for fraud review."
-
-            return JsonResponse({"message": message}, status=202 if fraud_detected else 200)
-
+                
+            return JsonResponse({"message": message}, 
+                              status=202 if fraud_detected else 200)
+        else:
+            return JsonResponse({"error": "Invalid form data"}, status=400)
     else:
         form = LoanApplicationForm()
+        return render(request, "loan_form.html", {"form": form})
 
-    return render(request, "loan_form.html", {"form": form})
+
+        
