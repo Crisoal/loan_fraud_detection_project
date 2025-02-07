@@ -6,4 +6,46 @@ from .models import LoanApplication
 class LoanApplicationForm(forms.ModelForm):
     class Meta:
         model = LoanApplication
-        fields = ["full_name", "email", "phone", "amount_requested", "purpose"]
+        fields = [
+            'full_name',
+            'email',
+            'phone',
+            'address',
+            'employment_status',
+            'occupation',
+            'amount_requested',
+            'repayment_duration',
+            'purpose'
+        ]
+        widgets = {
+            'purpose': forms.Textarea(attrs={'rows': 3}),
+            'repayment_duration': forms.Select(attrs={'class': 'form-control'})
+        }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['amount_requested'].widget.attrs.update({
+            'min': 0,
+            'step': '0.01'
+        })
+        self.fields['employment_status'].widget.attrs.update({
+            'class': 'form-control'
+        })
+    
+    def clean_amount_requested(self):
+        amount = self.cleaned_data['amount_requested']
+        if amount <= 0:
+            raise forms.ValidationError("Amount must be greater than zero")
+        return amount
+    
+    def clean_phone(self):
+        phone = self.cleaned_data['phone']
+        if not phone.replace(' ', '').replace('+', '').isdigit():
+            raise forms.ValidationError("Please enter a valid phone number")
+        return phone
+    
+    def clean_email(self):
+        email = self.cleaned_data['email']
+        if LoanApplication.objects.filter(email=email).exists():
+            raise forms.ValidationError("This email address is already in use")
+        return email

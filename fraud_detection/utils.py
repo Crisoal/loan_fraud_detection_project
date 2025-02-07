@@ -45,42 +45,51 @@ def get_fingerprint_visitor_id(device_info):
         logger.error(f"Fingerprint API request failed: {e}")
         return None
 
-def detect_fraud(loan_application):
+def detect_fraud(loan_application, extended_metadata=None):
     """
-    Checks for fraudulent activity using predefined criteria.
+    Enhanced fraud detection using extended metadata from FingerprintJS.
     """
     fraud_reasons = []
     
-    # Detect fraud using the fraud detection engine
-    fraud_detected, reasons = detect_fraudulent_application(loan_application)
-    if fraud_detected:
-        fraud_reasons.extend(reasons)
-
-    # Flag loan application if fraud is detected
+    if extended_metadata:
+        # Check confidence score
+        if extended_metadata.get('confidence', 0) < 0.9:
+            fraud_reasons.append("Low confidence in visitor identification")
+        
+        # Check browser consistency
+        if loan_application.visitor_id:
+            previous_apps = LoanApplication.objects.filter(visitor_id=loan_application.visitor_id)
+            for app in previous_apps:
+                if app.metadata:
+                    prev_browser = json.loads(app.metadata).get('browserInfo', {})
+                    curr_browser = extended_metadata.get('browserInfo', {})
+                    
+                    if prev_browser.get('browserName') != curr_browser.get('browserName'):
+                        fraud_reasons.append("Browser type mismatch")
+                    if prev_browser.get('os') != curr_browser.get('os'):
+                        fraud_reasons.append("Operating system mismatch")
+    
+    # Check for rapid submissions
+    if loan_application.visitor_id:
+        recent_apps = LoanApplication.objects.filter(
+            visitor_id=loan_application.visitor_id,
+            application_date__gte=timezone.now() - timedelta(minutes=30)
+        ).exclude(id=loan_application.id)
+        
+        if recent_apps.count() > 2:
+            fraud_reasons.append("Multiple applications in short timeframe")
+    
     if fraud_reasons:
-        loan_application.status = "flagged"
-        loan_application.save()
-
         FraudAlert.objects.create(
             loan_application=loan_application,
             visitor_id=loan_application.visitor_id,
             reason=" | ".join(fraud_reasons),
         )
+        return True
+    
+    return False
 
-        # Send an email notification for flagged applications
-        send_mail(
-            "Fraud Alert - Loan Application",
-            f"A loan application has been flagged for fraud. Details:\n\nLoan ID: {loan_application.id}\nFull Name: {loan_application.full_name}\nAmount Requested: {loan_application.amount_requested}\n\nReasons: {', '.join(fraud_reasons)}",
-            settings.DEFAULT_FROM_EMAIL,
-            [settings.ADMIN_EMAIL],
-            fail_silently=True,
-        )
-
-        return True  # Fraud detected
-
-    return False  # No fraud detected
-
-
+    
 def store_visitor_data(request):
     """
     Stores visitor data and retrieves fingerprint.

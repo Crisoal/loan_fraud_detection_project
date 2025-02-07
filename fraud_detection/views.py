@@ -67,41 +67,40 @@ def apply_for_loan(request):
         if form.is_valid():
             # Get visitor data from form
             visitor_id = request.POST.get('visitor_id')
-            device_fingerprint = request.POST.get('device_fingerprint')
-
-            # Create or update visitor record
+            extended_metadata = json.loads(request.POST.get('extended_metadata') or '{}')
+            
+            # Create or update visitor record with extended metadata
             client_ip = get_client_ip(request)
             visitor, created = VisitorID.objects.get_or_create(
                 ip_address=client_ip,
                 defaults={
                     "visitor_id": visitor_id,
-                    "device_fingerprint": device_fingerprint,
+                    "confidence_score": extended_metadata.get('confidence', 0),
+                    "browser_info": json.dumps(extended_metadata.get('browserInfo', {})),
+                    "first_seen_at": extended_metadata.get('firstSeenAt'),
+                    "last_seen_at": extended_metadata.get('lastSeenAt'),
                     "last_seen": timezone.now()
                 }
             )
-
-            if not visitor.visitor_id and visitor_id:
-                visitor.visitor_id = visitor_id
-                visitor.save()
-
+            
             # Save the form with visitor data
             loan_app = form.save(commit=False)
             loan_app.visitor_id = visitor
             loan_app.ip_address = client_ip
             
-            # Ensure device fingerprint is saved
-            if device_fingerprint:
-                loan_app.device_fingerprint = device_fingerprint
-
+            # Store additional metadata
+            loan_app.metadata = json.dumps(extended_metadata)
+            
+            # Check for fraud using extended metadata
+            # fraud_detected = detect_fraud(loan_app, extended_metadata)
+            
             loan_app.save()
-
-            # # Check for fraud
-            # fraud_detected = flag_suspicious_application(loan_app)
             
             return JsonResponse({
                 "message": "Application submitted successfully.",
                 # "fraud_detected": fraud_detected
             }, status=201)
-
+        
         return JsonResponse({"error": "Invalid form data"}, status=400)
-    return JsonResponse({"error": "Invalid request method"}, status=405)   
+    
+    return JsonResponse({"error": "Invalid request method"}, status=405)

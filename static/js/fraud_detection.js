@@ -2,44 +2,64 @@
 
 document.addEventListener("DOMContentLoaded", function () {
     const form = document.getElementById("loanForm");
-    if (!form) return;
-
-    // Get the public key from the global variable set in the HTML template
     const publicKey = window.fingerprintjsPublicKey;
     
-    if (!publicKey) {
-        console.error("FingerprintJS public key is missing.");
-        return;
-    }
-
     form.addEventListener("submit", async function (event) {
-        event.preventDefault();
+        event.preventDefault(); // Prevent form submission until data is collected
+
         try {
-            const fp = await import(`https://fpjscdn.net/v3/${publicKey}`);
-            const result = await fp.load().then(FingerprintJS => FingerprintJS.get());
+            // Load FingerprintJS library dynamically
+            const FingerprintJS = await import(`https://fpjscdn.net/v3/${publicKey}`);
+            const fp = await FingerprintJS.load();
 
-            // Store visitor ID in hidden input
-            const visitorInput = document.getElementById("visitor_id");
-            if (visitorInput) {
-                visitorInput.value = result.visitorId;
+            // Get visitor data with extended metadata
+            const result = await fp.get({ extendedResult: true });
 
-                // Ensure device fingerprint is captured
-                const deviceFingerprintInput = document.createElement("input");
-                deviceFingerprintInput.type = "hidden";
-                deviceFingerprintInput.name = "device_fingerprint";
-                deviceFingerprintInput.value = JSON.stringify(result.components);
-                form.appendChild(deviceFingerprintInput);
+            // Log full response for debugging
+            console.log("FingerprintJS Extended Metadata Response:", result);
 
-                // Now submit the form
-                form.submit();
-            } else {
-                console.error("Visitor ID input element not found");
-                throw new Error("Visitor ID input element not found");
-            }
-        } catch (error) {
-            console.error("Error getting visitor ID:", error);
-            // Log the error but still allow form submission
+            // Store visitor ID in form
+            document.getElementById("visitor_id").value = result.visitorId;
+
+            // Extract extended metadata
+            const extendedData = {
+                requestId: result.requestId,
+                confidence: result.confidence.score,
+                ip: result.ip,
+                browserInfo: {
+                    browserName: result.browserName,
+                    browserVersion: result.browserVersion,
+                    os: result.os,
+                    osVersion: result.osVersion,
+                    device: result.device,
+                    incognito: result.incognito
+                },
+                location: result.ipLocation ? {
+                    accuracyRadius: result.ipLocation.accuracyRadius,
+                    latitude: result.ipLocation.latitude,
+                    longitude: result.ipLocation.longitude,
+                    postalCode: result.ipLocation.postalCode,
+                    timezone: result.ipLocation.timezone,
+                    city: result.ipLocation.city.name,
+                    country: result.ipLocation.country.name,
+                    continent: result.ipLocation.continent.name,
+                    subdivisions: result.ipLocation.subdivisions.map(sub => sub.name)
+                } : null,
+                firstSeenAt: result.firstSeenAt.global,
+                lastSeenAt: result.lastSeenAt.global
+            };
+
+            // Log extended metadata for debugging
+            console.log("Extracted Extended Metadata:", extendedData);
+
+            // Store metadata in hidden form field
+            document.getElementById("extended_metadata").value = JSON.stringify(extendedData);
+
+            // Submit form after data collection
             form.submit();
+        } catch (error) {
+            console.error("Error retrieving visitor metadata:", error);
+            form.submit(); // Allow form submission even if FingerprintJS fails
         }
     });
 });
