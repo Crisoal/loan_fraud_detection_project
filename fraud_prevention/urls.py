@@ -7,5 +7,5 @@ from fraud_detection.views import loan_form_home  # Import the homepage view
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("", loan_form_home, name="home"),  # Set the loan application form as the homepage
-    path("fraud-detection/", include("fraud_detection.urls")),
+    path("", include("fraud_detection.urls")),
 ]

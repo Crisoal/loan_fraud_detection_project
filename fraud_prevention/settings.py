@@ -79,6 +79,9 @@ TEMPLATES = [
     },
 ]
 
+LOGIN_REDIRECT_URL = '/dashboard/'
+LOGIN_URL = '/login/'
+
 # STATIC & MEDIA FILES
 STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]

@@ -10,6 +10,55 @@ from .utils import get_fingerprint_visitor_id, store_visitor_data, flag_suspicio
 from .services import detect_fraudulent_application
 import json
 from django.utils import timezone
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib import messages
+from .forms import LoginForm  # Renamed from AdminLoginForm
+from django.contrib.auth.models import User
+from django.shortcuts import render, redirect
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib import messages
+from .forms import LoginForm  # Renamed from AdminLoginForm
+
+# Helper function to check if user is an admin
+def is_admin(user):
+    return user.is_authenticated and user.is_staff
+
+# Dashboard View (Restricted)
+@login_required(login_url='login')
+@user_passes_test(is_admin)
+def dashboard(request):
+    return render(request, 'dashboard.html')  # Create this template
+
+# Login View
+def login_view(request):
+    if request.user.is_authenticated and request.user.is_staff:
+        return redirect('dashboard')  # Redirect if the admin is already logged in
+    
+    if request.method == 'POST':
+        form = LoginForm(request.POST)
+        if form.is_valid():
+            username = form.cleaned_data['username']
+            password = form.cleaned_data['password']
+            user = authenticate(request, username=username, password=password)
+            if user is not None and user.is_staff:
+                login(request, user)
+                return redirect('dashboard')  # Redirect to the dashboard after successful login
+            else:
+                messages.error(request, "Invalid credentials or insufficient permissions.")
+        else:
+            messages.error(request, "Please fill out the form correctly.")
+    else:
+        form = LoginForm()
+
+    return render(request, 'login.html', {'form': form})
+    
+# Logout View
+@login_required
+def logout_view(request):
+    logout(request)
+    return redirect('login')
 
 
 def track_visitor(request):
@@ -104,3 +153,4 @@ def apply_for_loan(request):
         return JsonResponse({"error": "Invalid form data"}, status=400)
     
     return JsonResponse({"error": "Invalid request method"}, status=405)
+
