@@ -20,6 +20,11 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib import messages
 from .forms import LoginForm  # Renamed from AdminLoginForm
+import logging
+from django.views.decorators.csrf import csrf_exempt
+
+# Configure the logger
+logger = logging.getLogger(__name__)
 
 # Helper function to check if user is an admin
 def is_admin(user):
@@ -48,12 +53,14 @@ def login_view(request):
             else:
                 messages.error(request, "Invalid credentials or insufficient permissions.")
         else:
+            print(form.errors)  # Debugging: Print form errors
             messages.error(request, "Please fill out the form correctly.")
     else:
         form = LoginForm()
 
     return render(request, 'login.html', {'form': form})
-    
+
+
 # Logout View
 @login_required
 def logout_view(request):
@@ -107,50 +114,62 @@ def loan_form_home(request):
     }
     return render(request, "loan_form.html", context)
 
-
 # views.py
 @csrf_exempt
 def apply_for_loan(request):
-    if request.method == "POST":
-        form = LoanApplicationForm(request.POST)
-        if form.is_valid():
-            # Get visitor data from form
-            visitor_id = request.POST.get('visitor_id')
-            extended_metadata = json.loads(request.POST.get('extended_metadata') or '{}')
-            
-            # Create or update visitor record with extended metadata
-            client_ip = get_client_ip(request)
-            visitor, created = VisitorID.objects.get_or_create(
-                ip_address=client_ip,
-                defaults={
-                    "visitor_id": visitor_id,
-                    "confidence_score": extended_metadata.get('confidence', 0),
-                    "browser_info": json.dumps(extended_metadata.get('browserInfo', {})),
-                    "first_seen_at": extended_metadata.get('firstSeenAt'),
-                    "last_seen_at": extended_metadata.get('lastSeenAt'),
-                    "last_seen": timezone.now()
-                }
-            )
-            
-            # Save the form with visitor data
-            loan_app = form.save(commit=False)
-            loan_app.visitor_id = visitor
-            loan_app.ip_address = client_ip
-            
-            # Store additional metadata
-            loan_app.metadata = json.dumps(extended_metadata)
-            
-            # Check for fraud using extended metadata
-            # fraud_detected = detect_fraud(loan_app, extended_metadata)
-            
-            loan_app.save()
-            
-            return JsonResponse({
-                "message": "Application submitted successfully.",
-                # "fraud_detected": fraud_detected
-            }, status=201)
-        
-        return JsonResponse({"error": "Invalid form data"}, status=400)
-    
-    return JsonResponse({"error": "Invalid request method"}, status=405)
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request method"}, status=405)
 
+    form = LoanApplicationForm(request.POST)
+    if not form.is_valid():
+        return JsonResponse({
+            "error": "Invalid form data",
+            "details": dict(form.errors)
+        }, status=400)
+
+    extended_metadata_str = request.POST.get('extended_metadata', '')
+
+    if not extended_metadata_str:
+        return JsonResponse({
+            "error": "Invalid metadata format",
+            "details": "Extended metadata is empty",
+        }, status=400)
+
+    try:
+        extended_metadata = json.loads(extended_metadata_str)
+
+        visitor_id = extended_metadata['visitorId']
+        public_ip = extended_metadata.get('publicIpAddress')
+        client_ip = get_client_ip(request)
+        incognito_mode = extended_metadata.get('incognito', None)  # Fetch incognito status
+
+        visitor_data = {
+            'ip_address': client_ip,
+            'public_ip': public_ip,
+            'confidence_score': extended_metadata.get('confidence', 0),
+            'browser_name': extended_metadata.get('browserDetails', {}).get('browser'),
+            'browser_version': extended_metadata.get('browserDetails', {}).get('version'),
+            'os': extended_metadata.get('osDetails', {}).get('os'),
+            'os_version': extended_metadata.get('osDetails', {}).get('version'),
+            'device': extended_metadata.get('device'),
+            'first_seen_at': extended_metadata.get('firstSeenAt'),
+            'last_seen_at': extended_metadata.get('lastSeenAt'),
+            'incognito': incognito_mode  # Store incognito mode status
+        }
+
+        visitor, created = VisitorID.objects.get_or_create(
+            visitor_id=visitor_id,
+            defaults=visitor_data
+        )
+
+        loan_app = form.save(commit=False)
+        loan_app.visitor_id = visitor
+        loan_app.ip_address = client_ip
+        loan_app.public_ip = public_ip
+        loan_app.confidence_score = extended_metadata.get('confidence', 0)
+        loan_app.save()
+
+        return JsonResponse({"message": "Application submitted successfully."}, status=201)
+
+    except Exception as e:
+        return JsonResponse({"error": "Unexpected server error"}, status=500)

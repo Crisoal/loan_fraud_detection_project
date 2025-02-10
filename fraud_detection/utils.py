@@ -5,6 +5,7 @@ import requests
 import logging
 from datetime import timedelta
 from django.utils.timezone import now
+from django.utils import timezone
 from django.core.mail import send_mail
 from django.conf import settings
 from tenacity import retry, stop_after_attempt, wait_fixed
@@ -89,7 +90,7 @@ def detect_fraud(loan_application, extended_metadata=None):
     
     return False
 
-    
+
 def store_visitor_data(request):
     """
     Stores visitor data and retrieves fingerprint.

@@ -10,11 +10,11 @@ class FraudAlertAdmin(admin.ModelAdmin):
 
 @admin.register(LoanApplication)
 class LoanApplicationAdmin(admin.ModelAdmin):
-    list_display = ("full_name", "email", "amount_requested", "status", "application_date")  # Changed from 'created_at' to 'application_date'
+    list_display = ("full_name", "email", "amount_requested", "status", "application_date")
     search_fields = ("full_name", "email")
-    list_filter = ("status", "application_date")  # Changed from 'created_at' to 'application_date'
+    list_filter = ("status", "application_date")
 
 @admin.register(VisitorID)
 class VisitorIDAdmin(admin.ModelAdmin):
-    list_display = ("visitor_id", "ip_address", "device_fingerprint", "last_seen")
+    list_display = ("visitor_id", "ip_address", "public_ip", "device", "last_seen")
     search_fields = ("visitor_id", "ip_address")

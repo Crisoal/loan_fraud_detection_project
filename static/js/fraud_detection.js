@@ -3,63 +3,62 @@
 document.addEventListener("DOMContentLoaded", function () {
     const form = document.getElementById("loanForm");
     const publicKey = window.fingerprintjsPublicKey;
-    
+
+    if (!publicKey || publicKey.trim() === "" || publicKey.includes("{{")) {
+        console.error('FingerprintJS public key is missing or not properly set.');
+        return;
+    }
+
     form.addEventListener("submit", async function (event) {
-        event.preventDefault(); // Prevent form submission until data is collected
+        event.preventDefault(); // Prevent default form submission
 
         try {
-            // Load FingerprintJS library dynamically
             const FingerprintJS = await import(`https://fpjscdn.net/v3/${publicKey}`);
             const fp = await FingerprintJS.load();
-
-            // Get visitor data with extended metadata
             const result = await fp.get({ extendedResult: true });
 
-            // Log full response for debugging
-            console.log("FingerprintJS Extended Metadata Response:", result);
-
-            // Store visitor ID in form
-            document.getElementById("visitor_id").value = result.visitorId;
-
-            // Extract extended metadata
+            // Collect metadata
             const extendedData = {
                 requestId: result.requestId,
-                confidence: result.confidence.score,
-                ip: result.ip,
-                browserInfo: {
-                    browserName: result.browserName,
-                    browserVersion: result.browserVersion,
-                    os: result.os,
-                    osVersion: result.osVersion,
-                    device: result.device,
-                    incognito: result.incognito
-                },
-                location: result.ipLocation ? {
-                    accuracyRadius: result.ipLocation.accuracyRadius,
-                    latitude: result.ipLocation.latitude,
-                    longitude: result.ipLocation.longitude,
-                    postalCode: result.ipLocation.postalCode,
-                    timezone: result.ipLocation.timezone,
-                    city: result.ipLocation.city.name,
-                    country: result.ipLocation.country.name,
-                    continent: result.ipLocation.continent.name,
-                    subdivisions: result.ipLocation.subdivisions.map(sub => sub.name)
-                } : null,
+                visitorId: result.visitorId,
                 firstSeenAt: result.firstSeenAt.global,
-                lastSeenAt: result.lastSeenAt.global
+                lastSeenAt: result.lastSeenAt.global,
+                browserDetails: {
+                    browser: result.browserName,
+                    version: result.browserVersion
+                },
+                osDetails: {
+                    os: result.os,
+                    version: result.osVersion,
+                },
+                device: result.device,
+                publicIpAddress: result.ip,  // Store IP from FingerprintJS
+                incognito: result.incognito, // Add incognito mode detection
+                confidence: result.confidence?.score || 0
             };
 
-            // Log extended metadata for debugging
-            console.log("Extracted Extended Metadata:", extendedData);
-
-            // Store metadata in hidden form field
+            // Append metadata to form
             document.getElementById("extended_metadata").value = JSON.stringify(extendedData);
 
-            // Submit form after data collection
-            form.submit();
+            // Submit form using Fetch API
+            const formData = new FormData(form);
+            const response = await fetch(form.action, {
+                method: "POST",
+                body: formData
+            });
+
+            const data = await response.json();
+
+            // Handle response and update UI
+            if (response.ok) {
+                form.innerHTML = `<div class="alert alert-success text-center">${data.message || "Application submitted successfully!"}</div>`;
+            } else {
+                form.innerHTML = `<div class="alert alert-danger text-center">Something went wrong. Please try again later.</div>`;
+                console.error("Server Error:", data.error || "Unknown error");
+            }
         } catch (error) {
             console.error("Error retrieving visitor metadata:", error);
-            form.submit(); // Allow form submission even if FingerprintJS fails
+            form.innerHTML = `<div class="alert alert-danger text-center">An unexpected error occurred. Please try again.</div>`;
         }
     });
 });

@@ -18,12 +18,13 @@
             <a class="navbar-brand" href="/">Fraud Prevention</a>
             <div class="collapse navbar-collapse">
                 <ul class="navbar-nav ms-auto">
-                    <li class="nav-item"><a class="nav-link" target="_blank" href="{% url 'login' %}">Login</a></li>
-                    
+                    <li class="nav-item">
+                        <a class="nav-link" target="_blank" href="{% url 'admin:login' %}">Login</a>
+                    </li>
                 </ul>
             </div>
         </div>
-    </nav>
+    </nav>    
 
     <div class="container mt-4">
         {% block content %}{% endblock %}
@@ -42,6 +43,7 @@
         <script>
             window.fingerprintjsPublicKey = "{{ fingerprintjs_public_key }}";
         </script>
+        
         <script src="{% static 'js/fraud_detection.js' %}"></script>
 </body>
 

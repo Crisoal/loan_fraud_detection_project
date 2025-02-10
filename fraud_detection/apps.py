@@ -1,3 +1,5 @@
+# fraud_detection/apps.py
+
 from django.apps import AppConfig
 
 class FraudDetectionConfig(AppConfig):

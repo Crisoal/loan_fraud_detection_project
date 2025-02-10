@@ -10,7 +10,6 @@
         <h4 class="text-center">Loan Application</h4>
         <form id="loanForm" method="post" action="{% url 'apply_for_loan' %}">
             {% csrf_token %}
-
             <!-- Personal Information -->
             <div class="mb-3">
                 <label for="full_name" class="form-label">Full Name</label>
