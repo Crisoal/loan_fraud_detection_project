@@ -10,7 +10,6 @@ from django.core.mail import send_mail
 from django.conf import settings
 from tenacity import retry, stop_after_attempt, wait_fixed
 from .models import LoanApplication, VisitorID, FraudAlert
-from .fraud_detection_engine import detect_fraudulent_application
 
 
 # Load API credentials

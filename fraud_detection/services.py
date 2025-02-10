@@ -4,7 +4,6 @@ import os
 from django.db.models import Q
 from dotenv import load_dotenv
 from .models import LoanApplication, VisitorID, FraudAlert
-from .fraud_detection_engine import detect_fraudulent_application
 
 # Load environment variables
 load_dotenv()

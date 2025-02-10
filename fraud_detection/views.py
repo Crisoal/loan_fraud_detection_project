@@ -7,7 +7,6 @@ from .models import VisitorID, LoanApplication
 from django.views.decorators.csrf import csrf_exempt
 from .forms import LoanApplicationForm
 from .utils import get_fingerprint_visitor_id, store_visitor_data, flag_suspicious_application, get_client_ip
-from .services import detect_fraudulent_application
 import json
 from django.utils import timezone
 from django.contrib.auth import authenticate, login, logout

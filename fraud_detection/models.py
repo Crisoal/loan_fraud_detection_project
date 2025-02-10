@@ -78,6 +78,7 @@ class LoanApplication(models.Model):
     ip_address = models.GenericIPAddressField(null=True, blank=True)  # Client IP
     public_ip = models.GenericIPAddressField(null=True, blank=True)  # IP from FingerprintJS
     confidence_score = models.FloatField(null=True, blank=True)
+    incognito = models.BooleanField(null=True, blank=True)  # New field for incognito mode
     application_date = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
