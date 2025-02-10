@@ -6,38 +6,34 @@ from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 
-# models.py
 class VisitorID(models.Model):
-    """
-    Stores unique visitor identifiers and associated metadata for fraud detection.
-    """
+    """Stores unique visitor identifiers and associated metadata for fraud detection."""
     visitor_id = models.CharField(max_length=255, unique=True, null=True)
-    ip_address = models.GenericIPAddressField(null=True, blank=True)  # Client IP
-    public_ip = models.GenericIPAddressField(null=True, blank=True)  # IP from FingerprintJS
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    public_ip = models.GenericIPAddressField(null=True, blank=True)
     confidence_score = models.FloatField(null=True, blank=True)
-
+    
     # Browser information
     browser_name = models.CharField(max_length=100, null=True, blank=True)
     browser_version = models.CharField(max_length=50, null=True, blank=True)
-
+    
     # Operating System information
     os = models.CharField(max_length=50, null=True, blank=True)
     os_version = models.CharField(max_length=50, null=True, blank=True)
-
+    
     # Device information
     device = models.CharField(max_length=100, null=True, blank=True)
-
-    # Incognito mode detection
-    incognito = models.BooleanField(null=True, blank=True)  # New field for incognito mode
-
+    
+    # Smart Signals
+    incognito = models.BooleanField(null=True, blank=True)
+    
     # Timestamps
     first_seen_at = models.DateTimeField(null=True, blank=True)
     last_seen_at = models.DateTimeField(null=True, blank=True)
     last_seen = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"Visitor {self.visitor_id} - {self.ip_address} / {self.public_ip} (Incognito: {self.incognito})"
-
+        return f"Visitor {self.visitor_id} - {self.ip_address} / {self.public_ip}"
 
 class LoanApplication(models.Model):
     STATUS_CHOICES = [
@@ -75,25 +71,28 @@ class LoanApplication(models.Model):
     )
     purpose = models.TextField(default="No purpose specified")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
-    ip_address = models.GenericIPAddressField(null=True, blank=True)  # Client IP
-    public_ip = models.GenericIPAddressField(null=True, blank=True)  # IP from FingerprintJS
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    public_ip = models.GenericIPAddressField(null=True, blank=True)
     confidence_score = models.FloatField(null=True, blank=True)
-    incognito = models.BooleanField(null=True, blank=True)  # New field for incognito mode
+    risk_score = models.FloatField(null=True, blank=True)
+    metadata = models.JSONField(null=True, blank=True)
     application_date = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"Loan {self.id} - {self.full_name} ({self.status})"
 
-
 class FraudAlert(models.Model):
-    """
-    Stores flagged fraudulent activities linked to loan applications.
-    """
+    """Stores flagged fraudulent activities linked to loan applications."""
     loan_application = models.ForeignKey(LoanApplication, on_delete=models.CASCADE, related_name="fraud_alerts")
     visitor_id = models.ForeignKey(VisitorID, on_delete=models.CASCADE, null=True, blank=True)
     reason = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     resolved = models.BooleanField(default=False)
+    risk_level = models.CharField(max_length=20, choices=[
+        ('APPROVE', 'Approved'),
+        ('REVIEW', 'Manual Review Required'),
+        ('REJECT', 'Rejected')
+    ], null=True, blank=True)
 
     def __str__(self):
-        return f"Fraud Alert for Loan {self.loan_application.id} - {self.reason[:30]}"
+        return f"Fraud Alert for Loan {self.loan_application.id} - Risk Level: {self.risk_level}"

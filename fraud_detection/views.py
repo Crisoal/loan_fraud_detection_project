@@ -66,6 +66,17 @@ def logout_view(request):
     logout(request)
     return redirect('login')
 
+def loan_form_home(request):
+    """
+    Renders the loan application form as the homepage.
+    """
+    form = LoanApplicationForm()  # Create an empty form for display
+    context = {
+        "form": form,
+        "fingerprintjs_public_key": settings.FINGERPRINTJS_PUBLIC_KEY,  # Pass the public key
+    }
+    return render(request, "loan_form.html", context)
+
 
 def track_visitor(request):
     """
@@ -102,18 +113,8 @@ def get_fingerprint_visitor_id(request):
             return JsonResponse({"error": "Internal server error"}, status=500)
     return JsonResponse({"error": "Invalid request method"}, status=405)
 
-def loan_form_home(request):
-    """
-    Renders the loan application form as the homepage.
-    """
-    form = LoanApplicationForm()  # Create an empty form for display
-    context = {
-        "form": form,
-        "fingerprintjs_public_key": settings.FINGERPRINTJS_PUBLIC_KEY,  # Pass the public key
-    }
-    return render(request, "loan_form.html", context)
-
 # views.py
+
 @csrf_exempt
 def apply_for_loan(request):
     if request.method != "POST":
@@ -136,15 +137,16 @@ def apply_for_loan(request):
 
     try:
         extended_metadata = json.loads(extended_metadata_str)
-
-        visitor_id = extended_metadata['visitorId']
-        public_ip = extended_metadata.get('publicIpAddress')
-        client_ip = get_client_ip(request)
-        incognito_mode = extended_metadata.get('incognito', None)  # Fetch incognito status
-
+        risk_scoring_service = RiskScoringService()
+        
+        # Process loan application
+        loan_app = form.save(commit=False)
+        loan_app.metadata = extended_metadata_str
+        
+        # Get or create visitor ID
         visitor_data = {
-            'ip_address': client_ip,
-            'public_ip': public_ip,
+            'ip_address': get_client_ip(request),
+            'public_ip': extended_metadata.get('publicIpAddress'),
             'confidence_score': extended_metadata.get('confidence', 0),
             'browser_name': extended_metadata.get('browserDetails', {}).get('browser'),
             'browser_version': extended_metadata.get('browserDetails', {}).get('version'),
@@ -153,23 +155,44 @@ def apply_for_loan(request):
             'device': extended_metadata.get('device'),
             'first_seen_at': extended_metadata.get('firstSeenAt'),
             'last_seen_at': extended_metadata.get('lastSeenAt'),
-            'incognito': incognito_mode  # Store incognito mode status
+            'incognito': extended_metadata.get('incognito', None)
         }
-
+        
         visitor, created = VisitorID.objects.get_or_create(
-            visitor_id=visitor_id,
+            visitor_id=extended_metadata['visitorId'],
             defaults=visitor_data
         )
-
-        loan_app = form.save(commit=False)
+        
         loan_app.visitor_id = visitor
-        loan_app.ip_address = client_ip
-        loan_app.public_ip = public_ip
-        loan_app.confidence_score = extended_metadata.get('confidence', 0)
-        loan_app.incognito = incognito_mode
+        loan_app.ip_address = visitor_data['ip_address']
+        loan_app.public_ip = visitor_data['public_ip']
+        loan_app.confidence_score = visitor_data['confidence_score']
+        loan_app.incognito = visitor_data['incognito']
         loan_app.save()
 
-        return JsonResponse({"message": "Application submitted successfully."}, status=201)
+        # Calculate risk score and determine action
+        risk_score = risk_scoring_service.calculate_risk_score(loan_app)
+        decision = risk_scoring_service.get_decision(risk_score)
+        
+        # Create fraud alert if necessary
+        if risk_score > 40:
+            FraudAlert.objects.create(
+                loan_application=loan_app,
+                visitor_id=visitor,
+                reason=f"High risk score ({risk_score})",
+                risk_level=decision
+            )
+            
+            if decision == 'REJECT':
+                loan_app.status = 'fraud_detected'
+                loan_app.save()
+                
+        return JsonResponse({
+            "message": "Application submitted successfully",
+            "risk_score": risk_score,
+            "decision": decision
+        }, status=201)
 
     except Exception as e:
+        logger.error(f"Error processing loan application: {str(e)}")
         return JsonResponse({"error": "Unexpected server error"}, status=500)
