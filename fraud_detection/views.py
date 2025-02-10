@@ -166,6 +166,7 @@ def apply_for_loan(request):
         loan_app.ip_address = client_ip
         loan_app.public_ip = public_ip
         loan_app.confidence_score = extended_metadata.get('confidence', 0)
+        loan_app.incognito = incognito_mode
         loan_app.save()
 
         return JsonResponse({"message": "Application submitted successfully."}, status=201)
