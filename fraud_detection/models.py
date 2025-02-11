@@ -5,6 +5,7 @@ from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 
+# fraud_detection/models.py
 class VisitorID(models.Model):
     """Stores unique visitor identifiers and associated metadata for fraud detection."""
     visitor_id = models.CharField(max_length=255, unique=True, null=True)
@@ -22,15 +23,6 @@ class VisitorID(models.Model):
     
     # Device information
     device = models.CharField(max_length=100, null=True, blank=True)
-    
-    # Smart Signals
-    incognito = models.BooleanField(null=True, blank=True)
-    bot_detected = models.BooleanField(null=True, blank=True)
-    ip_blocklisted = models.BooleanField(null=True, blank=True)
-    tor_detected = models.BooleanField(null=True, blank=True)
-    vpn_detected = models.BooleanField(null=True, blank=True)
-    proxy_detected = models.BooleanField(null=True, blank=True)
-    tampering_detected = models.BooleanField(null=True, blank=True)
     
     # Timestamps
     first_seen_at = models.DateTimeField(null=True, blank=True)
@@ -81,6 +73,14 @@ class LoanApplication(models.Model):
     confidence_score = models.FloatField(null=True, blank=True)
     risk_score = models.FloatField(null=True, blank=True)
     metadata = models.JSONField(null=True, blank=True)
+      # Smart Signals
+    incognito = models.BooleanField(null=True, blank=True)
+    bot_detected = models.BooleanField(null=True, blank=True)
+    ip_blocklisted = models.BooleanField(null=True, blank=True)
+    tor_detected = models.BooleanField(null=True, blank=True)
+    vpn_detected = models.BooleanField(null=True, blank=True)
+    proxy_detected = models.BooleanField(null=True, blank=True)
+    tampering_detected = models.BooleanField(null=True, blank=True)
     application_date = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):

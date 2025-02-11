@@ -11,4 +11,3 @@ def check_fraud(sender, instance, created, **kwargs):
     if created:
         detect_fraud(instance)
 
-
