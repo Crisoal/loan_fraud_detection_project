@@ -7,6 +7,10 @@ from django.core.mail import send_mail
 from django.conf import settings
 from .models import LoanApplication, VisitorID, FraudAlert
 from tenacity import retry, stop_after_attempt, wait_fixed
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class RiskScoringService:
     def __init__(self):
@@ -70,36 +74,99 @@ class RiskScoringService:
         return 0
 
     def _calculate_device_risk(self, loan_application):
-        """Evaluate device and browser-related risks."""
+        """
+        Evaluate device and browser-related risks using smart signals.
+        Returns a risk score between 0-100 based on various device and behavior indicators.
+        """
         if not loan_application.visitor_id:
             return 50  # Default medium risk if no visitor ID
             
-        extended_metadata = json.loads(loan_application.metadata or '{}')
+        # Get smart signals from database
+        visitor_id = loan_application.visitor_id
         
-        # Check for suspicious device characteristics
-        risk_factors = []
+        def normalize_bot_value(value):
+            """Convert bot detection value to standardized boolean"""
+            if isinstance(value, bool):
+                return value
+            return str(value).lower() == 'detected'
         
-        # Confidence score check
-        if extended_metadata.get('confidence', 0) < self.CONFIDENCE_THRESHOLD:
-            risk_factors.append(30)
+        def evaluate_confidence_score(score):
+            """Calculate risk factor based on confidence score"""
+            if score < self.CONFIDENCE_THRESHOLD:
+                return 30
+            elif score < 0.95:
+                return 15
+            return 0
+        
+        def assess_device_behavior():
+            """Evaluate risk based on device and browser characteristics"""
+            risk_factors = []
             
-        # Incognito mode detection
-        if extended_metadata.get('incognito', False):
-            risk_factors.append(20)
-            
-        # VPN detection
-        if extended_metadata.get('vpn', {}).get('result', False):
-            risk_factors.append(25)
-            
-        # Tampering detection
-        if extended_metadata.get('tampering', {}).get('result', False):
-            risk_factors.append(40)
-            
-        # Browser bot detection
-        if extended_metadata.get('bot', {}).get('result', False):
-            risk_factors.append(45)
-            
-        return sum(risk_factors)
+            # Bot detection
+            if normalize_bot_value(visitor_id.bot_detected):
+                risk_factors.append({
+                    'factor': 'Bot Detection',
+                    'score': 45,
+                    'description': 'Automated traffic detected'
+                })
+                
+            # VPN detection
+            if visitor_id.vpn_detected:
+                risk_factors.append({
+                    'factor': 'VPN Usage',
+                    'score': 30,
+                    'description': 'VPN connection detected'
+                })
+                
+            # Proxy detection
+            if visitor_id.proxy_detected:
+                risk_factors.append({
+                    'factor': 'Proxy Detection',
+                    'score': 25,
+                    'description': 'Proxy server detected'
+                })
+                
+            # Tampering detection
+            if visitor_id.tampering_detected:
+                risk_factors.append({
+                    'factor': 'Tampering Detected',
+                    'score': 40,
+                    'description': 'Browser tampering detected'
+                })
+                
+            # Confidence score evaluation
+            confidence_risk = evaluate_confidence_score(visitor_id.confidence_score)
+            if confidence_risk > 0:
+                risk_factors.append({
+                    'factor': 'Low Confidence Score',
+                    'score': confidence_risk,
+                    'description': f'Confidence score: {visitor_id.confidence_score}'
+                })
+                
+            # Incognito mode detection
+            if visitor_id.incognito:
+                risk_factors.append({
+                    'factor': 'Incognito Mode',
+                    'score': 20,
+                    'description': 'Private browsing mode detected'
+                })
+                
+            return risk_factors
+
+        # Calculate total risk score
+        risk_factors = assess_device_behavior()
+        total_risk = sum(factor['score'] for factor in risk_factors)
+        
+        # Apply device weight
+        weighted_risk = min(max(total_risk * self.DEVICE_WEIGHT, 0), 100)
+        
+        # Log detailed risk assessment
+        logger.debug(f"Device Risk Assessment:")
+        for factor in risk_factors:
+            logger.debug(f"- {factor['factor']}: {factor['score']} ({factor['description']})")
+        logger.debug(f"Total Device Risk Score: {weighted_risk}")
+        
+        return weighted_risk
 
     def _calculate_ip_risk(self, loan_application):
         """Assess IP address related risks."""
@@ -159,7 +226,7 @@ class FraudDetectionService:
                 loan_application.save()
                 
                 # Notify administrators
-                self._notify_admins(loan_application, risk_score)
+                # self._notify_admins(loan_application, risk_score)
                 
             return True, risk_score
         return False, risk_score

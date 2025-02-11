@@ -4,7 +4,8 @@ from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.conf import settings
 from .models import VisitorID, LoanApplication
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, csrf_protect
+from django.utils.decorators import method_decorator
 from .forms import LoanApplicationForm
 from .utils import get_fingerprint_visitor_id, store_visitor_data, flag_suspicious_application, get_client_ip
 import json
@@ -19,8 +20,9 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib import messages
 from .forms import LoginForm  # Renamed from AdminLoginForm
+from fraud_detection.services import RiskScoringService
 import logging
-from django.views.decorators.csrf import csrf_exempt
+import requests 
 
 # Configure the logger
 logger = logging.getLogger(__name__)
@@ -77,6 +79,44 @@ def loan_form_home(request):
     }
     return render(request, "loan_form.html", context)
 
+@csrf_protect
+def get_smart_signals(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request method"}, status=405)
+
+    try:
+        # Debugging: Print the secret key
+        print("FingerprintJS Secret Key:", settings.FINGERPRINTJS_SECRET_KEY)  # Debugging
+        
+        print("Request Headers:", request.headers)  # Debugging
+        print("Request Body:", request.body)  # Debugging
+
+        data = json.loads(request.body)
+        request_id = data.get("requestId")
+
+        if not request_id:
+            return JsonResponse({"error": "Missing request ID"}, status=400)
+
+        url = f"https://api.fpjs.io/events/{request_id}"
+        headers = {
+            "Auth-API-Key": f"{settings.FINGERPRINTJS_SECRET_KEY}",  # Corrected header key
+            "Accept": "application/json"
+        }
+
+        response = requests.get(url, headers=headers)
+        print("FingerprintJS Response:", response.status_code, response.text)  # Debugging
+
+        if response.status_code != 200:
+            return JsonResponse({"error": "Failed to fetch smart signals"}, status=response.status_code)
+
+        return JsonResponse(response.json())
+
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON data"}, status=400)
+    except Exception as e:
+        print("Internal Server Error:", str(e))  # Debugging
+        return JsonResponse({"error": str(e)}, status=500)
+
 
 def track_visitor(request):
     """
@@ -119,22 +159,21 @@ def get_fingerprint_visitor_id(request):
 def apply_for_loan(request):
     if request.method != "POST":
         return JsonResponse({"error": "Invalid request method"}, status=405)
-
+    
     form = LoanApplicationForm(request.POST)
     if not form.is_valid():
         return JsonResponse({
             "error": "Invalid form data",
             "details": dict(form.errors)
         }, status=400)
-
+    
     extended_metadata_str = request.POST.get('extended_metadata', '')
-
     if not extended_metadata_str:
         return JsonResponse({
             "error": "Invalid metadata format",
             "details": "Extended metadata is empty",
         }, status=400)
-
+    
     try:
         extended_metadata = json.loads(extended_metadata_str)
         risk_scoring_service = RiskScoringService()
@@ -143,7 +182,7 @@ def apply_for_loan(request):
         loan_app = form.save(commit=False)
         loan_app.metadata = extended_metadata_str
         
-        # Get or create visitor ID
+        # Get or create visitor ID with smart signals
         visitor_data = {
             'ip_address': get_client_ip(request),
             'public_ip': extended_metadata.get('publicIpAddress'),
@@ -155,7 +194,14 @@ def apply_for_loan(request):
             'device': extended_metadata.get('device'),
             'first_seen_at': extended_metadata.get('firstSeenAt'),
             'last_seen_at': extended_metadata.get('lastSeenAt'),
-            'incognito': extended_metadata.get('incognito', None)
+            'incognito': extended_metadata.get('incognito', None),
+            # Smart signals - convert string responses to boolean
+            'bot_detected': extended_metadata.get('smartSignals', {}).get('botDetection', False),
+            'ip_blocklisted': extended_metadata.get('smartSignals', {}).get('ipBlocklist', False),
+            'tor_detected': extended_metadata.get('smartSignals', {}).get('tor', False),
+            'vpn_detected': extended_metadata.get('smartSignals', {}).get('vpn', False),
+            'proxy_detected': extended_metadata.get('smartSignals', {}).get('proxy', False),
+            'tampering_detected': extended_metadata.get('smartSignals', {}).get('tampering', False),
         }
         
         visitor, created = VisitorID.objects.get_or_create(
@@ -169,7 +215,7 @@ def apply_for_loan(request):
         loan_app.confidence_score = visitor_data['confidence_score']
         loan_app.incognito = visitor_data['incognito']
         loan_app.save()
-
+        
         # Calculate risk score and determine action
         risk_score = risk_scoring_service.calculate_risk_score(loan_app)
         decision = risk_scoring_service.get_decision(risk_score)
@@ -192,7 +238,7 @@ def apply_for_loan(request):
             "risk_score": risk_score,
             "decision": decision
         }, status=201)
-
+        
     except Exception as e:
         logger.error(f"Error processing loan application: {str(e)}")
         return JsonResponse({"error": "Unexpected server error"}, status=500)

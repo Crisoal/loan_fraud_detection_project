@@ -1,5 +1,4 @@
 # fraud_detection/models.py
-
 import uuid
 from django.db import models
 from django.contrib.auth.models import User
@@ -26,12 +25,18 @@ class VisitorID(models.Model):
     
     # Smart Signals
     incognito = models.BooleanField(null=True, blank=True)
+    bot_detected = models.BooleanField(null=True, blank=True)
+    ip_blocklisted = models.BooleanField(null=True, blank=True)
+    tor_detected = models.BooleanField(null=True, blank=True)
+    vpn_detected = models.BooleanField(null=True, blank=True)
+    proxy_detected = models.BooleanField(null=True, blank=True)
+    tampering_detected = models.BooleanField(null=True, blank=True)
     
     # Timestamps
     first_seen_at = models.DateTimeField(null=True, blank=True)
     last_seen_at = models.DateTimeField(null=True, blank=True)
     last_seen = models.DateTimeField(auto_now=True)
-
+    
     def __str__(self):
         return f"Visitor {self.visitor_id} - {self.ip_address} / {self.public_ip}"
 
@@ -77,7 +82,7 @@ class LoanApplication(models.Model):
     risk_score = models.FloatField(null=True, blank=True)
     metadata = models.JSONField(null=True, blank=True)
     application_date = models.DateTimeField(auto_now_add=True)
-
+    
     def __str__(self):
         return f"Loan {self.id} - {self.full_name} ({self.status})"
 
@@ -93,6 +98,6 @@ class FraudAlert(models.Model):
         ('REVIEW', 'Manual Review Required'),
         ('REJECT', 'Rejected')
     ], null=True, blank=True)
-
+    
     def __str__(self):
         return f"Fraud Alert for Loan {self.loan_application.id} - Risk Level: {self.risk_level}"

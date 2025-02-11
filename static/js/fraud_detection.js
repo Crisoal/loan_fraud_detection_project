@@ -1,33 +1,45 @@
 // static/js/fraud_detection.js
+
 document.addEventListener("DOMContentLoaded", async function () {
     const form = document.getElementById("loanForm");
     const publicKey = window.fingerprintjsPublicKey;
-    const API_KEY = window.fingerprintjsApiKey; // Add this to your HTML: <script>const fingerprintjsApiKey = 'YOUR_API_KEY';</script>
-    
-    if (!publicKey || publicKey.trim() === "" || publicKey.includes("{{")) {
-        console.error('FingerprintJS public key is missing or not properly set.');
-        return;
+
+    // Get CSRF token from cookie
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
     }
 
     form.addEventListener("submit", async function (event) {
         event.preventDefault();
+
         try {
+            const csrftoken = getCookie('csrftoken');
+
             // Load FingerprintJS
             const FingerprintJS = await import(`https://fpjscdn.net/v3/${publicKey}`);
             const fp = await FingerprintJS.load();
             const result = await fp.get({ extendedResult: true });
 
-            // Fetch smart signals using the request ID
-            const smartSignalsResponse = await fetch(
-                `https://api.fpjs.io/events/${result.requestId}`,
-                {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${API_KEY}`,
-                        'Accept': 'application/json'
-                    }
-                }
-            );
+            // Send requestId to Django backend with CSRF token
+            const smartSignalsResponse = await fetch("/get-smart-signals/", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": csrftoken  // Add CSRF token here
+                },
+                body: JSON.stringify({ requestId: result.requestId })
+            });
 
             if (!smartSignalsResponse.ok) {
                 throw new Error(`Failed to fetch smart signals: ${smartSignalsResponse.statusText}`);
@@ -54,7 +66,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                 incognito: result.incognito,
                 confidence: result.confidence?.score || 0,
                 smartSignals: {
-                    botDetection: smartSignalsData.products.botd?.data?.bot?.result,
+                    botDetection: smartSignalsData.products.botd?.data?.bot?.result === 'detected',
                     ipBlocklist: smartSignalsData.products.ipBlocklist?.data?.result,
                     tor: smartSignalsData.products.tor?.data?.result,
                     vpn: smartSignalsData.products.vpn?.data?.result,
@@ -63,7 +75,9 @@ document.addEventListener("DOMContentLoaded", async function () {
                     velocity: smartSignalsData.products.velocity?.data,
                     ipInfo: smartSignalsData.products.ipInfo?.data?.v4
                 }
+                
             };
+
 
             // Append metadata to form
             document.getElementById("extended_metadata").value = JSON.stringify(extendedData);
