@@ -38,10 +38,9 @@ class VisitorID(models.Model):
 class LoanApplication(models.Model):
     STATUS_CHOICES = [
         ("pending", "Pending"),
-        ("approved", "Approved"),
+        ("approve", "Approve"),
         ("rejected", "Rejected"),
-        ("flagged", "Flagged for Review"),
-        ("fraud_detected", "Fraud Detected")
+        ("flagged", "Flagged for Review")
     ]
     
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -102,13 +101,25 @@ class FraudAlert(models.Model):
     reason = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     resolved = models.BooleanField(default=False)
-    risk_level = models.CharField(max_length=20, choices=[
-        ('APPROVE', 'Approved'),
-        ('REVIEW', 'Manual Review Required'),
-        ('REJECT', 'Rejected')
-    ], null=True, blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('APPROVE', 'Approved'),
+            ('REVIEW', 'Manual Review Required'),
+            ('REJECT', 'Rejected'),
+            ('PENDING', 'Pending')  # Added PENDING as a valid choice
+        ],
+        default='PENDING'  # Set default value to PENDING
+    )
     risk_score = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     metadata = models.JSONField(null=True, blank=True)
-    
+
+    def save(self, *args, **kwargs):
+        """Ensure status defaults to 'PENDING' if an invalid value is set."""
+        valid_statuses = {'APPROVE', 'REVIEW', 'REJECT', 'PENDING'}
+        if self.status not in valid_statuses:
+            self.status = 'PENDING'
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"Fraud Alert for Loan {self.loan_application.id} - Risk Level: {self.risk_level}"
+        return f"Fraud Alert for Loan {self.loan_application.id} - Status: {self.status}"

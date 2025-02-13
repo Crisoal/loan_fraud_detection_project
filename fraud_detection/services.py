@@ -214,7 +214,7 @@ class FraudDetectionService:
                     application_date__gte=timezone.now() - timedelta(days=7)
                 ).exclude(id=loan_application.id)
                 
-                if recent_applications.count() >= 3:
+                if recent_applications.count() >= 1:
                     fraud_alerts.append(f"Multiple applications ({recent_applications.count()}) "
                                       f"from same Visitor ID in last 7 days")
             
@@ -244,19 +244,26 @@ class FraudDetectionService:
             if risk_score > 70:
                 fraud_alerts.append(f"High risk score detected ({risk_score})")
             
-            # Create fraud alert if any conditions met
+            # If any fraud alerts are triggered, set the loan application status to 'PENDING'
             if fraud_alerts:
                 with transaction.atomic():
+                    # Create fraud alert with 'PENDING' status
                     FraudAlert.objects.create(
                         loan_application=loan_application,
                         visitor_id=loan_application.visitor_id,
                         reason=" | ".join(fraud_alerts),
-                        risk_level=decision,
-                        risk_score=float(risk_score)
+                        status='PENDING',  # Set status to 'PENDING' for flagged loans
+                        risk_score=float(risk_score),
+                        metadata=loan_application.metadata
                     )
-            
-            return bool(fraud_alerts), risk_score
-            
+                    # Update loan application status to 'PENDING'
+                    loan_application.status = 'PENDING'
+                    loan_application.save()
+
+                return True, risk_score
+            else:
+                return False, risk_score
+
         except Exception as e:
             logger.error(f"Error processing fraud detection: {str(e)}")
             raise
@@ -316,6 +323,6 @@ class FraudDetectionService:
             loan_application=loan_application,
             visitor_id=loan_application.visitor_id,
             reason=f"High risk score ({risk_score})",
-            risk_level=self.get_decision(risk_score),
+            status=self.get_decision(risk_score),
             metadata=alert_data
         )
