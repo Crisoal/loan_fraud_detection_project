@@ -5,7 +5,6 @@ from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 
-# fraud_detection/models.py
 class VisitorID(models.Model):
     """Stores unique visitor identifiers and associated metadata for fraud detection."""
     visitor_id = models.CharField(max_length=255, unique=True, null=True)
@@ -28,6 +27,10 @@ class VisitorID(models.Model):
     first_seen_at = models.DateTimeField(null=True, blank=True)
     last_seen_at = models.DateTimeField(null=True, blank=True)
     last_seen = models.DateTimeField(auto_now=True)
+    
+    # Add fields for tracking application history
+    application_count = models.IntegerField(default=0)
+    last_application_date = models.DateTimeField(null=True, blank=True)
     
     def __str__(self):
         return f"Visitor {self.visitor_id} - {self.ip_address} / {self.public_ip}"
@@ -71,9 +74,10 @@ class LoanApplication(models.Model):
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     public_ip = models.GenericIPAddressField(null=True, blank=True)
     confidence_score = models.FloatField(null=True, blank=True)
-    risk_score = models.FloatField(null=True, blank=True)
+    risk_score = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     metadata = models.JSONField(null=True, blank=True)
-      # Smart Signals
+    
+    # Smart Signals
     incognito = models.BooleanField(null=True, blank=True)
     bot_detected = models.BooleanField(null=True, blank=True)
     ip_blocklisted = models.BooleanField(null=True, blank=True)
@@ -81,7 +85,12 @@ class LoanApplication(models.Model):
     vpn_detected = models.BooleanField(null=True, blank=True)
     proxy_detected = models.BooleanField(null=True, blank=True)
     tampering_detected = models.BooleanField(null=True, blank=True)
+    
+    # Add fields for fraud detection
     application_date = models.DateTimeField(auto_now_add=True)
+    last_modified = models.DateTimeField(auto_now=True)
+    fraud_patterns = models.JSONField(null=True, blank=True)
+    risk_factors = models.JSONField(null=True, blank=True)
     
     def __str__(self):
         return f"Loan {self.id} - {self.full_name} ({self.status})"
@@ -98,6 +107,8 @@ class FraudAlert(models.Model):
         ('REVIEW', 'Manual Review Required'),
         ('REJECT', 'Rejected')
     ], null=True, blank=True)
+    risk_score = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
+    metadata = models.JSONField(null=True, blank=True)
     
     def __str__(self):
         return f"Fraud Alert for Loan {self.loan_application.id} - Risk Level: {self.risk_level}"

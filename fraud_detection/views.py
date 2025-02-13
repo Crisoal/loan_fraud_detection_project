@@ -155,96 +155,114 @@ def get_fingerprint_visitor_id(request):
     return JsonResponse({"error": "Invalid request method"}, status=405)
 
 # views.py
-
 @csrf_exempt
 def apply_for_loan(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "Invalid request method"}, status=405)
-
-    form = LoanApplicationForm(request.POST)
-    if not form.is_valid():
-        return JsonResponse({
-            "error": "Invalid form data",
-            "details": dict(form.errors)
-        }, status=400)
-
-    extended_metadata_str = request.POST.get('extended_metadata', '')
-    if not extended_metadata_str:
-        return JsonResponse({
-            "error": "Invalid metadata format",
-            "details": "Extended metadata is empty"
-        }, status=400)
-
     try:
-        extended_metadata = json.loads(extended_metadata_str)
+        if request.method != "POST":
+            return JsonResponse({"error": "Invalid request method"}, status=405)
+        
+        form = LoanApplicationForm(request.POST)
+        if not form.is_valid():
+            return JsonResponse({
+                "error": "Invalid form data",
+                "details": dict(form.errors)
+            }, status=400)
+        
+        extended_metadata_str = request.POST.get('extended_metadata', '')
+        if not extended_metadata_str:
+            return JsonResponse({
+                "error": "Invalid metadata format",
+                "details": "Extended metadata is empty"
+            }, status=400)
+        
+        try:
+            extended_metadata = json.loads(extended_metadata_str)
+        except json.JSONDecodeError:
+            return JsonResponse({
+                "error": "Invalid JSON format",
+                "details": "Extended metadata must be valid JSON"
+            }, status=400)
         
         # Initialize services
         fraud_detection_service = FraudDetectionService()
         risk_scoring_service = RiskScoringService()
-
+        
         # Process loan application within transaction
-        with transaction.atomic():
-            loan_app = form.save(commit=False)
-            loan_app.metadata = extended_metadata_str
-            
-            # Get or create visitor ID (without smart signals and incognito)
-            visitor_data = {
-                'ip_address': get_client_ip(request),
-                'public_ip': extended_metadata.get('publicIpAddress'),
-                'confidence_score': extended_metadata.get('confidence', 0),
-                'browser_name': extended_metadata.get('browserDetails', {}).get('browser'),
-                'browser_version': extended_metadata.get('browserDetails', {}).get('version'),
-                'os': extended_metadata.get('osDetails', {}).get('os'),
-                'os_version': extended_metadata.get('osDetails', {}).get('version'),
-                'device': extended_metadata.get('device'),
-                'first_seen_at': extended_metadata.get('firstSeenAt'),
-                'last_seen_at': extended_metadata.get('lastSeenAt'),
-            }
-            
-            visitor, created = VisitorID.objects.get_or_create(
-                visitor_id=extended_metadata['visitorId'],
-                defaults=visitor_data
-            )
-            
-            # Set basic visitor info on loan application
-            loan_app.visitor_id = visitor
-            loan_app.ip_address = visitor_data['ip_address']
-            loan_app.public_ip = visitor_data['public_ip']
-            loan_app.confidence_score = visitor_data['confidence_score']
-            
-            # Set smart signals and incognito on loan application
-            smart_signals = extended_metadata.get('smartSignals', {})
-            loan_app.bot_detected = smart_signals.get('botDetection', False)
-            loan_app.ip_blocklisted = smart_signals.get('ipBlocklist', False)
-            loan_app.tor_detected = smart_signals.get('tor', False)
-            loan_app.vpn_detected = smart_signals.get('vpn', False)
-            loan_app.proxy_detected = smart_signals.get('proxy', False)
-            loan_app.tampering_detected = smart_signals.get('tampering', False)
-            loan_app.incognito = extended_metadata.get('incognito', None)
-            
-            # Save initial application data
-            loan_app.save()
-            
-            # Detect fraud and calculate risk score
-            fraud_detected, risk_score = fraud_detection_service.detect_fraud(loan_app)
-            
-            # Update loan application with final status
-            decision = risk_scoring_service.get_decision(risk_score)
-            loan_app.risk_score = risk_score
-            loan_app.status = decision
-            loan_app.save()
-            
-            # Notify administrators if high-risk application detected
-            if risk_score > 70:
-                fraud_detection_service._notify_admins(loan_app, risk_score)
+        try:
+            with transaction.atomic():
+                loan_app = form.save(commit=False)
+                loan_app.metadata = extended_metadata_str
                 
-            return JsonResponse({
-                "message": "Application submitted successfully",
-                "risk_score": risk_score,
-                "decision": decision,
-                "fraud_detected": fraud_detected
-            }, status=201)
+                # Get or create visitor ID
+                visitor_data = {
+                    'ip_address': get_client_ip(request),
+                    'public_ip': extended_metadata.get('publicIpAddress'),
+                    'confidence_score': extended_metadata.get('confidence', 0),
+                    'browser_name': extended_metadata.get('browserDetails', {}).get('browser'),
+                    'browser_version': extended_metadata.get('browserDetails', {}).get('version'),
+                    'os': extended_metadata.get('osDetails', {}).get('os'),
+                    'os_version': extended_metadata.get('osDetails', {}).get('version'),
+                    'device': extended_metadata.get('device'),
+                    'first_seen_at': extended_metadata.get('firstSeenAt'),
+                    'last_seen_at': extended_metadata.get('lastSeenAt'),
+                }
+                
+                visitor, created = VisitorID.objects.get_or_create(
+                    visitor_id=extended_metadata['visitorId'],
+                    defaults=visitor_data
+                )
+
+                # Update visitor data if it exists
+                if not created:
+                    for key, value in visitor_data.items():
+                        setattr(visitor, key, value)
+                    visitor.save()
+
+                # Update application count and last application date
+                visitor.application_count = LoanApplication.objects.filter(visitor_id=visitor).count()
+                visitor.last_application_date = timezone.now()
+                visitor.save()
+                
+                # Set basic visitor info on loan application
+                loan_app.visitor_id = visitor
+                loan_app.ip_address = visitor_data['ip_address']
+                loan_app.public_ip = visitor_data['public_ip']
+                loan_app.confidence_score = visitor_data['confidence_score']
+                
+                # Set smart signals and incognito
+                smart_signals = extended_metadata.get('smartSignals', {})
+                loan_app.bot_detected = smart_signals.get('botDetection', False)
+                loan_app.ip_blocklisted = smart_signals.get('ipBlocklist', False)
+                loan_app.tor_detected = smart_signals.get('tor', False)
+                loan_app.vpn_detected = smart_signals.get('vpn', False)
+                loan_app.proxy_detected = smart_signals.get('proxy', False)
+                loan_app.tampering_detected = smart_signals.get('tampering', False)
+                loan_app.incognito = extended_metadata.get('incognito', None)
+                
+                # Save initial application data
+                loan_app.save()
+                
+                # Detect fraud and calculate risk score
+                fraud_detected, risk_score = fraud_detection_service.detect_fraud(loan_app)
+                
+                # Update loan application with final status
+                decision = risk_scoring_service.get_decision(risk_score)
+                loan_app.risk_score = risk_score
+                loan_app.status = decision
+                loan_app.save()
+                
+                return JsonResponse({
+                    "message": "Application submitted successfully",
+                    "risk_score": risk_score,
+                    "decision": decision,
+                    "fraud_detected": fraud_detected,
+                    "status": loan_app.status
+                }, status=201)
+                
+        except Exception as e:
+            logger.error(f"Error processing loan application: {str(e)}")
+            return JsonResponse({"error": "Unexpected server error"}, status=500)
             
     except Exception as e:
-        logger.error(f"Error processing loan application: {str(e)}")
+        logger.error(f"Error in apply_for_loan view: {str(e)}")
         return JsonResponse({"error": "Unexpected server error"}, status=500)

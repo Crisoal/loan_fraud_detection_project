@@ -1,5 +1,4 @@
 # fraud_detection/services.py
-
 import os
 from django.db.models import Q
 from django.utils import timezone
@@ -8,6 +7,9 @@ from django.conf import settings
 from .models import LoanApplication, VisitorID, FraudAlert
 from tenacity import retry, stop_after_attempt, wait_fixed
 import logging
+import re
+from datetime import timedelta
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +70,7 @@ class RiskScoringService:
             base_risk = 60
             multiplier = min(similar_applications + different_identities, 5)
             return min(base_risk + (multiplier * 10), 100)
-        
+            
         return 0
 
     def _calculate_device_risk(self, loan_application):
@@ -76,7 +78,6 @@ class RiskScoringService:
         if not loan_application.visitor_id:
             return 50  # Default medium risk if no visitor ID
             
-        # Get smart signals from loan application
         def normalize_bot_value(value):
             """Convert bot detection value to standardized boolean"""
             if isinstance(value, bool):
@@ -170,7 +171,6 @@ class RiskScoringService:
         ip_related_apps = LoanApplication.objects.filter(ip_address=loan_application.ip_address)
         if ip_related_apps.count() > 5:  # Threshold for suspicious activity
             return 80
-            
         return 0
 
     def _calculate_history_risk(self, loan_application):
@@ -185,7 +185,6 @@ class RiskScoringService:
         
         if recent_applications.count() >= 3:
             return 70
-            
         return 0
 
     def get_decision(self, risk_score):
@@ -196,90 +195,111 @@ class RiskScoringService:
             return 'REVIEW'
         else:
             return 'REJECT'
-
             
 class FraudDetectionService:
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
     def detect_fraud(self, loan_application):
         """Detect fraud using multiple signals and risk scoring."""
-        risk_scoring_service = RiskScoringService()
-        risk_score = risk_scoring_service.calculate_risk_score(loan_application)
-        decision = risk_scoring_service.get_decision(risk_score)
+        try:
+            risk_scoring_service = RiskScoringService()
+            risk_score = risk_scoring_service.calculate_risk_score(loan_application)
+            decision = risk_scoring_service.get_decision(risk_score)
+            
+            fraud_alerts = []
+            
+            # Test 1: Multiple applications from same device
+            with transaction.atomic():
+                recent_applications = LoanApplication.objects.filter(
+                    visitor_id=loan_application.visitor_id,
+                    application_date__gte=timezone.now() - timedelta(days=7)
+                ).exclude(id=loan_application.id)
+                
+                if recent_applications.count() >= 3:
+                    fraud_alerts.append(f"Multiple applications ({recent_applications.count()}) "
+                                      f"from same Visitor ID in last 7 days")
+            
+            # Test 2: Same personal details with different devices
+            with transaction.atomic():
+                similar_applications = LoanApplication.objects.filter(
+                    Q(full_name=loan_application.full_name) |
+                    Q(phone=loan_application.phone) |
+                    Q(email=loan_application.email)
+                ).exclude(visitor_id=loan_application.visitor_id)
+                
+                if similar_applications.exists():
+                    fraud_alerts.append("Same personal details detected across different devices")
+            
+            # Test 3: Fake data detection
+            if self._detect_fake_data(loan_application):
+                fraud_alerts.append("Suspicious patterns detected in personal details")
+            
+            # Test 4: Similar applications with varying details
+            with transaction.atomic():
+                similar_pattern_apps = self._find_similar_patterns(loan_application)
+                if similar_pattern_apps.exists():
+                    fraud_alerts.append(f"Found {similar_pattern_apps.count()} similar applications "
+                                      f"with slightly different details")
+            
+            # Test 5: High risk score
+            if risk_score > 70:
+                fraud_alerts.append(f"High risk score detected ({risk_score})")
+            
+            # Create fraud alert if any conditions met
+            if fraud_alerts:
+                with transaction.atomic():
+                    FraudAlert.objects.create(
+                        loan_application=loan_application,
+                        visitor_id=loan_application.visitor_id,
+                        reason=" | ".join(fraud_alerts),
+                        risk_level=decision,
+                        risk_score=float(risk_score)
+                    )
+            
+            return bool(fraud_alerts), risk_score
+            
+        except Exception as e:
+            logger.error(f"Error processing fraud detection: {str(e)}")
+            raise
 
-        fraud_alerts = []
+    def _detect_fake_data(self, loan_application):
+        """Detect suspicious patterns in personal details."""
+        fake_patterns = [
+            r'^test.*@.*\.(?:com|org)$',  # Test email patterns
+            r'^(?:123|999)[0-9]{2}(?:-?)\d{3}(?:-?)\d{4}$',  # Suspicious phone numbers
+            r'(?:test|fake|sample|demo)[\w\s]*$',  # Common test names
+            r'^\d{4}-\d{2}-\d{2}$'  # Date-like strings as names
+        ]
+        for pattern in fake_patterns:
+            try:
+                if (re.match(pattern, loan_application.email.lower(), re.IGNORECASE) or
+                    re.match(pattern, loan_application.phone) or
+                    re.match(pattern, loan_application.full_name.lower())):
+                    return True
+            except re.error as e:
+                logger.error(f"Invalid regex pattern: {pattern}. Error: {str(e)}")
+                continue
+        return False
 
-        # Check for multiple Visitor IDs linked to the same personal details
-        similar_applications = LoanApplication.objects.filter(
-            Q(full_name=loan_application.full_name) |
-            Q(phone=loan_application.phone) |
-            Q(email=loan_application.email)
-        ).exclude(visitor_id=loan_application.visitor_id)
-
-        if similar_applications.exists():
-            fraud_alerts.append("Multiple Visitor IDs detected for the same personal details.")
-
-        # Check for multiple loan applications from the same Visitor ID
-        different_identities = LoanApplication.objects.filter(
-            visitor_id=loan_application.visitor_id
-        ).exclude(
-            Q(full_name=loan_application.full_name) |
-            Q(phone=loan_application.phone) |
-            Q(email=loan_application.email)
-        )
-
-        if different_identities.exists():
-            fraud_alerts.append("Same Visitor ID used for multiple different identities.")
-
-        # Insert a fraud alert if any fraud condition is met
-        if fraud_alerts:
-            FraudAlert.objects.create(
-                loan_application=loan_application,
-                visitor_id=loan_application.visitor_id,
-                reason=" | ".join(fraud_alerts),  # Store all fraud reasons
-                risk_level=decision,
-                risk_score=risk_score
-            )
-
-        # If risk is too high, update loan status
-        if risk_score > 70:
-            loan_application.status = 'fraud_detected'
-            loan_application.save()
-
-        return bool(fraud_alerts), risk_score
-
-
-    def _notify_admins(self, loan_application, risk_score):
-        """Notify administrators about high-risk applications."""
-        subject = f"High Risk Loan Application Detected (Score: {risk_score})"
-        message = f"""
-        Loan Application #{loan_application.id} has been flagged for fraud review.
-        Risk Score: {risk_score}
-        Status: {loan_application.status}
-        Visitor ID: {loan_application.visitor_id.visitor_id}
-        """
-        
-        send_mail(
-            subject,
-            message,
-            settings.DEFAULT_FROM_EMAIL,
-            settings.ADMIN_EMAILS,
-            fail_silently=False,
-        )
-
-    def get_fraud_statistics(self):
-        """Get fraud detection statistics."""
-        total_applications = LoanApplication.objects.count()
-        flagged_applications = LoanApplication.objects.filter(status='flagged').count()
-        fraud_detected = LoanApplication.objects.filter(status='fraud_detected').count()
-        approved_applications = LoanApplication.objects.filter(status='approved').count()
-        
-        return {
-            'total_applications': total_applications,
-            'flagged_applications': flagged_applications,
-            'fraud_detected': fraud_detected,
-            'approved_applications': approved_applications,
-            'fraud_rate': (fraud_detected / total_applications * 100) if total_applications > 0 else 0
-        }
+    def _find_similar_patterns(self, loan_application):
+        """Find similar applications with slightly varying details."""
+        try:
+            with transaction.atomic():
+                # Escape special regex characters in the full_name
+                escaped_name = re.escape(loan_application.full_name)
+                
+                similar_names = LoanApplication.objects.filter(
+                    full_name__iregex=rf'{escaped_name}'
+                ).exclude(visitor_id=loan_application.visitor_id)
+                
+                base_email = loan_application.email.split('@')[0].lower()
+                similar_emails = LoanApplication.objects.filter(
+                    email__iregex=rf'^{base_email}\d*@.*$'
+                ).exclude(visitor_id=loan_application.visitor_id)
+                
+                return similar_names.union(similar_emails)
+        except re.error as e:
+            logger.error(f"Error in similar patterns detection: {str(e)}")
+            return LoanApplication.objects.none()
 
     def notify_admin_dashboard(self, loan_application, risk_score):
         """Notify admin dashboard about high-risk applications."""
@@ -288,38 +308,14 @@ class FraudDetectionService:
             'visitor_id': loan_application.visitor_id.visitor_id,
             'risk_score': risk_score,
             'status': loan_application.status,
-            'metadata': loan_application.metadata
+            'metadata': loan_application.metadata,
+            'timestamp': timezone.now().isoformat()
         }
         
-        # Create fraud alert
         FraudAlert.objects.create(
             loan_application=loan_application,
             visitor_id=loan_application.visitor_id,
             reason=f"High risk score ({risk_score})",
-            risk_level=self.get_decision(risk_score)
+            risk_level=self.get_decision(risk_score),
+            metadata=alert_data
         )
-
-    def get_fraud_statistics(self):
-        """Get comprehensive fraud statistics for dashboard."""
-        return {
-            'total_applications': LoanApplication.objects.count(),
-            'flagged_applications': LoanApplication.objects.filter(status='flagged').count(),
-            'fraud_detected': LoanApplication.objects.filter(status='fraud_detected').count(),
-            'risk_distribution': self._calculate_risk_distribution(),
-            'visitor_patterns': self._analyze_visitor_patterns(),
-            'recent_alerts': FraudAlert.objects.order_by('-created_at')[:50],
-            'risk_percentages': self._calculate_risk_percentages()
-        }
-
-    def _calculate_risk_distribution(self):
-        """Calculate distribution of applications across risk levels."""
-        low_risk = LoanApplication.objects.filter(risk_score__lte=40).count()
-        medium_risk = LoanApplication.objects.filter(
-            risk_score__gt=40, risk_score__lte=70
-        ).count()
-        high_risk = LoanApplication.objects.filter(risk_score__gt=70).count()
-        return {
-            'Low Risk': low_risk,
-            'Medium Risk': medium_risk,
-            'High Risk': high_risk
-        }
