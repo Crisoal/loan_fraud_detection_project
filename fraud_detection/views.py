@@ -4,6 +4,7 @@ from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.conf import settings
 from .models import VisitorID, LoanApplication
+from django.db.models import F  # New import
 from django.views.decorators.csrf import csrf_exempt, csrf_protect
 from django.utils.decorators import method_decorator
 from .forms import LoanApplicationForm
