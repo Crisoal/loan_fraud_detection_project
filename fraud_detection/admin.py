@@ -108,3 +108,9 @@ class VisitorIDAdmin(admin.ModelAdmin):
     def linked_fraud_alerts(self, obj):
         return FraudAlert.objects.filter(visitor_id=obj).count()
     linked_fraud_alerts.short_description = "Fraud Alerts Linked"
+
+
+# Change admin site titles
+admin.site.site_header = "VeriLoan"
+admin.site.site_title = "VeriLoan Admin"
+admin.site.index_title = "VeriLoan Administration"
