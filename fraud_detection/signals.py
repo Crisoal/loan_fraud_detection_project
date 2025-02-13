@@ -13,19 +13,4 @@ def check_fraud(sender, instance, created, **kwargs):
         detect_fraud(instance)
 
 
-@receiver(post_migrate)
-def create_admin_user(sender, **kwargs):
-    User = get_user_model()
-    try:
-        # Check if an admin user already exists
-        if not User.objects.filter(username='admin').exists():
-            # Create the admin user
-            admin_user = User.objects.create_superuser(
-                username='admin',
-                email='admin@example.com',
-                password='adminpassword123'
-            )
-            admin_user.save()
-            print("Admin user created successfully.")
-    except IntegrityError:
-        print("Admin user already exists.")
+
