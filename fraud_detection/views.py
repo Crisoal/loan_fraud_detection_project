@@ -217,9 +217,9 @@ def apply_for_loan(request):
                     for key, value in visitor_data.items():
                         setattr(visitor, key, value)
                     visitor.save()
-
+                
                 # Update application count and last application date
-                visitor.application_count = LoanApplication.objects.filter(visitor_id=visitor).count()
+                visitor.application_count = visitor.loanapplication_set.count()
                 visitor.last_application_date = timezone.now()
                 visitor.save()
                 
