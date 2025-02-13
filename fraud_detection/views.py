@@ -154,27 +154,23 @@ def get_fingerprint_visitor_id(request):
             return JsonResponse({"error": "Internal server error"}, status=500)
     return JsonResponse({"error": "Invalid request method"}, status=405)
 
-# views.py
 @csrf_exempt
 def apply_for_loan(request):
     try:
         if request.method != "POST":
             return JsonResponse({"error": "Invalid request method"}, status=405)
-        
         form = LoanApplicationForm(request.POST)
         if not form.is_valid():
             return JsonResponse({
                 "error": "Invalid form data",
                 "details": dict(form.errors)
             }, status=400)
-        
         extended_metadata_str = request.POST.get('extended_metadata', '')
         if not extended_metadata_str:
             return JsonResponse({
                 "error": "Invalid metadata format",
                 "details": "Extended metadata is empty"
             }, status=400)
-        
         try:
             extended_metadata = json.loads(extended_metadata_str)
         except json.JSONDecodeError:
@@ -207,23 +203,18 @@ def apply_for_loan(request):
                     'last_seen_at': extended_metadata.get('lastSeenAt'),
                 }
                 
+                # Create visitor first without applications count
                 visitor, created = VisitorID.objects.get_or_create(
                     visitor_id=extended_metadata['visitorId'],
                     defaults=visitor_data
                 )
-
+                
                 # Update visitor data if it exists
                 if not created:
                     for key, value in visitor_data.items():
                         setattr(visitor, key, value)
-                    visitor.save()
                 
-                # Update application count and last application date
-                visitor.application_count = visitor.loanapplication_set.count()
-                visitor.last_application_date = timezone.now()
-                visitor.save()
-                
-                # Set basic visitor info on loan application
+                # Save loan application with visitor ID
                 loan_app.visitor_id = visitor
                 loan_app.ip_address = visitor_data['ip_address']
                 loan_app.public_ip = visitor_data['public_ip']
@@ -251,6 +242,19 @@ def apply_for_loan(request):
                 loan_app.status = decision
                 loan_app.save()
                 
+                # Update visitor with correct count
+                if created:
+                    # For new visitors, increment count immediately
+                    VisitorID.objects.filter(pk=visitor.pk).update(
+                        application_count=F('application_count') + 1,
+                        last_application_date=timezone.now()
+                    )
+                else:
+                    # For existing visitors, update count and date
+                    visitor.application_count = visitor.loanapplication_set.count()
+                    visitor.last_application_date = timezone.now()
+                    visitor.save()
+                
                 return JsonResponse({
                     "message": "Application submitted successfully",
                     "risk_score": risk_score,
@@ -258,11 +262,11 @@ def apply_for_loan(request):
                     "fraud_detected": fraud_detected,
                     "status": loan_app.status
                 }, status=201)
-                
+            
         except Exception as e:
             logger.error(f"Error processing loan application: {str(e)}")
             return JsonResponse({"error": "Unexpected server error"}, status=500)
-            
+        
     except Exception as e:
         logger.error(f"Error in apply_for_loan view: {str(e)}")
         return JsonResponse({"error": "Unexpected server error"}, status=500)
