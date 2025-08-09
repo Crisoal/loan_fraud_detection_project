@@ -1,5 +1,4 @@
 # fraud_detection/utils.py
-
 import os
 import requests
 import logging
@@ -10,6 +9,7 @@ from django.core.mail import send_mail
 from django.conf import settings
 from tenacity import retry, stop_after_attempt, wait_fixed
 from .models import LoanApplication, VisitorID, FraudAlert
+import json
 
 
 # Load API credentials

@@ -10,6 +10,8 @@ import logging
 import re
 from datetime import timedelta
 from django.db import transaction
+from .ml_services import MLFraudEnhancer
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -326,3 +328,231 @@ class FraudDetectionService:
             status=self.get_decision(risk_score),
             metadata=alert_data
         )
+
+
+class EnhancedFraudDetectionService(FraudDetectionService):
+    """
+    Enhanced fraud detection service with ML capabilities.
+    Extends your existing FraudDetectionService.
+    """
+    
+    def __init__(self):
+        super().__init__()
+        self.ml_enhancer = MLFraudEnhancer()
+    
+    def detect_fraud_with_ml(self, loan_application):
+        """
+        Enhanced fraud detection that combines rule-based detection with ML analysis.
+        """
+        try:
+            # First, run the existing fraud detection
+            fraud_detected, base_risk_score = self.detect_fraud(loan_application)
+            
+            # Apply ML enhancement
+            ml_results = self.ml_enhancer.enhance_fraud_detection(
+                loan_application, base_risk_score
+            )
+            
+            enhanced_risk_score = ml_results['enhanced_risk_score']
+            behavioral_analysis = ml_results['behavioral_analysis']
+            
+            # Update fraud alerts with ML insights
+            fraud_alerts = []
+            
+            # Add behavioral anomaly alerts
+            if behavioral_analysis.get('anomaly_detected'):
+                fraud_alerts.append(
+                    f"ML Anomaly Detection: Behavioral pattern significantly deviates from normal applications"
+                )
+            
+            if behavioral_analysis.get('behavioral_risk') == 'high':
+                fraud_alerts.append(
+                    f"ML Risk Assessment: High behavioral risk detected ({behavioral_analysis.get('analysis_details', '')})"
+                )
+            
+            # Create enhanced fraud alert if ML detected additional risks
+            if fraud_alerts and ml_results['ml_risk_adjustment'] > 10:
+                with transaction.atomic():
+                    FraudAlert.objects.create(
+                        loan_application=loan_application,
+                        visitor_id=loan_application.visitor_id,
+                        reason=" | ".join(fraud_alerts),
+                        status='PENDING',
+                        risk_score=float(enhanced_risk_score),
+                        metadata={
+                            'ml_analysis': behavioral_analysis,
+                            'base_risk_score': base_risk_score,
+                            'ml_risk_adjustment': ml_results['ml_risk_adjustment'],
+                            'detection_type': 'ML_ENHANCED'
+                        }
+                    )
+            
+            # Determine if fraud was detected (either by rules or ML)
+            ml_fraud_detected = (
+                behavioral_analysis.get('anomaly_detected', False) or 
+                behavioral_analysis.get('behavioral_risk') == 'high' or
+                ml_results['ml_risk_adjustment'] > 15
+            )
+            
+            final_fraud_detected = fraud_detected or ml_fraud_detected
+            
+            return final_fraud_detected, enhanced_risk_score, ml_results
+            
+        except Exception as e:
+            logger.error(f"Error in enhanced fraud detection: {str(e)}")
+            # Fallback to basic detection if ML fails
+            return self.detect_fraud(loan_application) + ({'error': str(e)},)
+
+class EnhancedRiskScoringService(RiskScoringService):
+    """
+    Enhanced risk scoring service with ML behavioral analysis.
+    """
+    
+    def __init__(self):
+        super().__init__()
+        self.ml_enhancer = MLFraudEnhancer()
+        # Add ML weight to existing weights
+        self.ML_WEIGHT = float(os.getenv("ML_WEIGHT", 0.15))
+        
+        # Adjust existing weights to accommodate ML weight
+        total_traditional_weight = self.IDENTITY_WEIGHT + self.DEVICE_WEIGHT + self.IP_WEIGHT + self.HISTORY_WEIGHT
+        adjustment_factor = (1.0 - self.ML_WEIGHT) / total_traditional_weight
+        
+        self.IDENTITY_WEIGHT *= adjustment_factor
+        self.DEVICE_WEIGHT *= adjustment_factor
+        self.IP_WEIGHT *= adjustment_factor
+        self.HISTORY_WEIGHT *= adjustment_factor
+    
+    def calculate_enhanced_risk_score(self, loan_application):
+        """Calculate risk score with ML behavioral analysis."""
+        try:
+            # Calculate traditional risk scores
+            traditional_scores = {
+                'identity': self._calculate_identity_risk(loan_application),
+                'device': self._calculate_device_risk(loan_application),
+                'ip': self._calculate_ip_risk(loan_application),
+                'history': self._calculate_history_risk(loan_application)
+            }
+            
+            # Calculate ML behavioral risk
+            behavioral_analysis = self.ml_enhancer.behavioral_analyzer.analyze_current_application(loan_application)
+            ml_risk_score = self._calculate_ml_behavioral_risk(behavioral_analysis)
+            
+            # Weighted sum including ML component
+            weighted_score = (
+                traditional_scores['identity'] * self.IDENTITY_WEIGHT +
+                traditional_scores['device'] * self.DEVICE_WEIGHT +
+                traditional_scores['ip'] * self.IP_WEIGHT +
+                traditional_scores['history'] * self.HISTORY_WEIGHT +
+                ml_risk_score * self.ML_WEIGHT
+            )
+            
+            final_score = min(max(weighted_score, 0), 100)
+            
+            # Store detailed scoring breakdown in metadata
+            scoring_breakdown = {
+                'traditional_scores': traditional_scores,
+                'ml_behavioral_score': ml_risk_score,
+                'behavioral_analysis': behavioral_analysis,
+                'weights': {
+                    'identity': self.IDENTITY_WEIGHT,
+                    'device': self.DEVICE_WEIGHT,
+                    'ip': self.IP_WEIGHT,
+                    'history': self.HISTORY_WEIGHT,
+                    'ml_behavioral': self.ML_WEIGHT
+                },
+                'final_score': final_score
+            }
+            
+            # Update loan application metadata
+            if loan_application.metadata:
+                try:
+                    metadata = json.loads(loan_application.metadata) if isinstance(loan_application.metadata, str) else loan_application.metadata
+                except json.JSONDecodeError:
+                    metadata = {}
+            else:
+                metadata = {}
+                
+            metadata['enhanced_scoring'] = scoring_breakdown
+            loan_application.metadata = json.dumps(metadata)
+            
+            return final_score
+            
+        except Exception as e:
+            logger.error(f"Error in enhanced risk scoring: {str(e)}")
+            # Fallback to traditional scoring if ML fails
+            return self.calculate_risk_score(loan_application)
+    
+    def _calculate_ml_behavioral_risk(self, behavioral_analysis):
+        """Convert ML behavioral analysis to risk score."""
+        risk_score = 0
+        
+        # Anomaly detection contribution
+        if behavioral_analysis.get('anomaly_detected'):
+            risk_score += 40
+            
+        # Anomaly score contribution (convert to 0-100 scale)
+        anomaly_score = behavioral_analysis.get('anomaly_score', 0)
+        if anomaly_score < -0.3:
+            risk_score += 35
+        elif anomaly_score < -0.1:
+            risk_score += 20
+        elif anomaly_score < 0:
+            risk_score += 10
+            
+        # Behavioral risk level contribution
+        behavioral_risk = behavioral_analysis.get('behavioral_risk', 'medium')
+        if behavioral_risk == 'high':
+            risk_score += 25
+        elif behavioral_risk == 'medium':
+            risk_score += 10
+            
+        # Cluster analysis contribution
+        if behavioral_analysis.get('cluster_label') == -1:  # Outlier
+            risk_score += 15
+            
+        return min(risk_score, 100)
+
+# Utility function to get enhanced decision with ML explanation
+def get_enhanced_decision_with_explanation(loan_application, risk_score, ml_results=None):
+    """
+    Get decision with detailed explanation including ML insights.
+    """
+    if risk_score <= 40:
+        decision = 'APPROVE'
+        confidence = 'high'
+    elif risk_score <= 70:
+        decision = 'REVIEW'
+        confidence = 'medium'
+    else:
+        decision = 'REJECT'
+        confidence = 'high'
+    
+    # Build explanation
+    explanation_parts = [
+        f"Risk score: {risk_score:.1f}/100"
+    ]
+    
+    if ml_results:
+        behavioral_analysis = ml_results.get('behavioral_analysis', {})
+        ml_adjustment = ml_results.get('ml_risk_adjustment', 0)
+        
+        if ml_adjustment > 0:
+            explanation_parts.append(f"ML risk adjustment: +{ml_adjustment}")
+            
+        if behavioral_analysis.get('anomaly_detected'):
+            explanation_parts.append("Behavioral anomaly detected")
+            
+        behavioral_risk = behavioral_analysis.get('behavioral_risk')
+        if behavioral_risk:
+            explanation_parts.append(f"Behavioral risk: {behavioral_risk}")
+            
+        analysis_details = behavioral_analysis.get('analysis_details')
+        if analysis_details:
+            explanation_parts.append(f"Analysis: {analysis_details}")
+    
+    return {
+        'decision': decision,
+        'confidence': confidence,
+        'explanation': " | ".join(explanation_parts)
+    }

@@ -41,8 +41,3 @@ class LoanApplicationForm(forms.ModelForm):
             raise forms.ValidationError("Please enter a valid phone number")
         return phone
     
-    # def clean_email(self):
-    #     email = self.cleaned_data['email']
-    #     if LoanApplication.objects.filter(email=email).exists():
-    #         raise forms.ValidationError("This email address is already in use")
-    #     return email

@@ -96,6 +96,10 @@ MEDIA_ROOT = BASE_DIR / "media"
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"  
 CRISPY_TEMPLATE_PACK = "bootstrap5"
 
+# ML INSIGHTS
+ML_ANALYSIS_ENABLED = os.getenv('ENABLE_ML_ANALYSIS', 'false').lower() == 'true'
+ML_BATCH_SIZE_LIMIT = int(os.getenv('ML_BATCH_SIZE_LIMIT', 50))
+
 # EMAIL CONFIGURATION (for fraud alerts)
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = "smtp.gmail.com"

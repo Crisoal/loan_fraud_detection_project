@@ -1,0 +1,806 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Admin Dashboard - VeriLoan{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h2>VeriLoan Admin Dashboard</h2>
+        <p class="text-muted">AI-Powered Fraud Detection Analytics</p>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 id="total-applications">0</h4>
+                        <p class="mb-0">Total Applications</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-file-alt fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-danger text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 id="high-risk-count">0</h4>
+                        <p class="mb-0">High Risk</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-exclamation-triangle fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 id="anomalies-count">0</h4>
+                        <p class="mb-0">AI Anomalies</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-robot fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h4 id="approved-count">0</h4>
+                        <p class="mb-0">Approved</p>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-check-circle fa-2x"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Controls -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5>Quick Actions</h5>
+                <button class="btn btn-primary me-2" onclick="refreshDashboard()">
+                    <i class="fas fa-sync-alt"></i> Refresh Data
+                </button>
+                <button class="btn btn-info me-2" onclick="runBatchAnalysis()">
+                    <i class="fas fa-brain"></i> Run ML Analysis
+                </button>
+                <button class="btn btn-secondary" onclick="exportData()">
+                    <i class="fas fa-download"></i> Export CSV
+                </button>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5>Filters</h5>
+                <div class="row">
+                    <div class="col-6">
+                        <select class="form-select" id="status-filter" onchange="filterApplications()">
+                            <option value="">All Status</option>
+                            <option value="pending">Pending</option>
+                            <option value="approve">Approved</option>
+                            <option value="rejected">Rejected</option>
+                            <option value="flagged">Flagged</option>
+                        </select>
+                    </div>
+                    <div class="col-6">
+                        <select class="form-select" id="risk-filter" onchange="filterApplications()">
+                            <option value="">All Risk Levels</option>
+                            <option value="low">Low Risk (0-40)</option>
+                            <option value="medium">Medium Risk (41-70)</option>
+                            <option value="high">High Risk (71-100)</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Applications Table -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Recent Applications</h5>
+        <div class="text-muted">
+            <small id="last-updated">Last updated: Never</small>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped" id="applications-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Applicant</th>
+                        <th>Amount</th>
+                        <th>Risk Score</th>
+                        <th>ML Insights</th>
+                        <th>Status</th>
+                        <th>Date</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td colspan="8" class="text-center">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            Loading applications...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ML Insights Modal -->
+<div class="modal fade" id="ml-insights-modal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">AI/ML Fraud Analysis</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Content will be dynamically populated -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Batch Analysis Modal -->
+<div class="modal fade" id="batch-analysis-modal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Batch ML Analysis Results</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="batch-results-content">
+                    <!-- Results will be populated here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Custom styles for dashboard */
+.card {
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    border: 1px solid rgba(0, 0, 0, 0.125);
+}
+
+.table th {
+    font-weight: 600;
+    background-color: #f8f9fa;
+}
+
+.risk-badge {
+    font-size: 0.8em;
+    padding: 0.25em 0.5em;
+}
+
+.risk-low { background-color: #d4edda; color: #155724; }
+.risk-medium { background-color: #fff3cd; color: #856404; }
+.risk-high { background-color: #f8d7da; color: #721c24; }
+
+.anomaly-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 5px;
+}
+
+.anomaly-detected { background-color: #dc3545; }
+.anomaly-normal { background-color: #28a745; }
+
+@media (max-width: 768px) {
+    .table-responsive {
+        font-size: 0.875rem;
+    }
+    
+    .card-body h4 {
+        font-size: 1.5rem;
+    }
+}
+</style>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/js/all.min.js"></script>
+<script>
+// Dashboard JavaScript
+let allApplications = [];
+let filteredApplications = [];
+
+// CSRF token helper
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Load dashboard data
+async function loadDashboardData() {
+    try {
+        // FIXED: Using the correct URL path from your backend
+        const response = await fetch('/admin/dashboard-data/', {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to load dashboard data');
+        }
+        
+        const data = await response.json();
+        allApplications = data.applications || [];
+        filteredApplications = [...allApplications];
+        
+        updateStats(data.stats || {});
+        updateApplicationsTable();
+        
+        document.getElementById('last-updated').textContent = 
+            `Last updated: ${new Date().toLocaleTimeString()}`;
+            
+    } catch (error) {
+        console.error('Error loading dashboard:', error);
+        showError('Failed to load dashboard data');
+    }
+}
+
+function updateStats(stats) {
+    document.getElementById('total-applications').textContent = stats.total || 0;
+    document.getElementById('high-risk-count').textContent = stats.high_risk || 0;
+    document.getElementById('anomalies-count').textContent = stats.anomalies || 0;
+    document.getElementById('approved-count').textContent = stats.approved || 0;
+}
+
+function updateApplicationsTable() {
+    const tbody = document.querySelector('#applications-table tbody');
+    
+    if (filteredApplications.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center">No applications found</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = filteredApplications.map(app => `
+        <tr class="application-row" data-application-id="${app.id}">
+            <td><small>${app.id.substring(0, 8)}...</small></td>
+            <td>
+                <strong>${app.full_name}</strong><br>
+                <small class="text-muted">${app.email}</small>
+            </td>
+            <td>₦${parseFloat(app.amount_requested || 0).toLocaleString()}</td>
+            <td>
+                <span class="badge risk-badge ${getRiskClass(app.risk_score)}">
+                    ${app.risk_score}/100
+                </span>
+            </td>
+            <td>
+                <span class="anomaly-indicator ${app.ml_anomaly ? 'anomaly-detected' : 'anomaly-normal'}"></span>
+                ${app.behavioral_risk || 'N/A'}
+            </td>
+            <td>
+                <span class="badge bg-${getStatusColor(app.status)}">
+                    ${app.status}
+                </span>
+            </td>
+            <td><small>${new Date(app.application_date).toLocaleDateString()}</small></td>
+            <td>
+                <button class="btn btn-sm btn-info" onclick="getMLInsights('${app.id}')">
+                    <i class="fas fa-brain"></i>
+                </button>
+                <button class="btn btn-sm btn-primary" onclick="viewDetails('${app.id}')">
+                    <i class="fas fa-eye"></i>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function getRiskClass(score) {
+    if (score <= 40) return 'risk-low';
+    if (score <= 70) return 'risk-medium';
+    return 'risk-high';
+}
+
+function getStatusColor(status) {
+    switch(status.toLowerCase()) {
+        case 'approve': return 'success';
+        case 'reject': 
+        case 'rejected': return 'danger';
+        case 'pending': return 'warning';
+        case 'flagged': return 'info';
+        default: return 'secondary';
+    }
+}
+
+function filterApplications() {
+    const statusFilter = document.getElementById('status-filter').value;
+    const riskFilter = document.getElementById('risk-filter').value;
+    
+    filteredApplications = allApplications.filter(app => {
+        let matchesStatus = !statusFilter || app.status.toLowerCase() === statusFilter;
+        let matchesRisk = true;
+        
+        if (riskFilter) {
+            const risk = app.risk_score;
+            switch(riskFilter) {
+                case 'low': matchesRisk = risk <= 40; break;
+                case 'medium': matchesRisk = risk > 40 && risk <= 70; break;
+                case 'high': matchesRisk = risk > 70; break;
+            }
+        }
+        
+        return matchesStatus && matchesRisk;
+    });
+    
+    updateApplicationsTable();
+}
+
+async function getMLInsights(applicationId) {
+    try {
+        // FIXED: Using the correct URL path from your backend
+        const response = await fetch(`/admin/ml-insights/?application_id=${applicationId}`);
+        const insights = await response.json();
+        
+        if (response.ok) {
+            displayDetailedInsights(insights);
+        } else {
+            showError('Failed to get ML insights: ' + insights.error);
+        }
+    } catch (error) {
+        showError('Error getting ML insights');
+    }
+}
+
+function displayDetailedInsights(insights) {
+    const modal = document.getElementById('ml-insights-modal');
+    const modalBody = modal.querySelector('.modal-body');
+    
+    modalBody.innerHTML = `
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <h6>Application Overview</h6>
+                <p><strong>ID:</strong> ${insights.application_id}</p>
+                <p><strong>Status:</strong> <span class="badge bg-${getStatusColor(insights.current_status)}">${insights.current_status}</span></p>
+            </div>
+            <div class="col-md-6">
+                <h6>Risk Assessment</h6>
+                <p><strong>Original:</strong> ${insights.original_risk_score}</p>
+                <p><strong>Enhanced:</strong> ${insights.enhanced_risk_score} <span class="text-success">(+${insights.ml_risk_adjustment})</span></p>
+            </div>
+        </div>
+        
+        <h6>AI Behavioral Analysis</h6>
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <strong>Anomaly Score:</strong><br>
+                        <code>${insights.behavioral_analysis.anomaly_score?.toFixed(3) || 'N/A'}</code>
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Risk Level:</strong><br>
+                        <span class="badge ${insights.behavioral_analysis.behavioral_risk === 'high' ? 'bg-danger' : insights.behavioral_analysis.behavioral_risk === 'medium' ? 'bg-warning' : 'bg-success'}">
+                            ${insights.behavioral_analysis.behavioral_risk || 'Unknown'}
+                        </span>
+                    </div>
+                    <div class="col-md-4">
+                        <strong>Anomaly Detected:</strong><br>
+                        <span class="${insights.behavioral_analysis.anomaly_detected ? 'text-danger' : 'text-success'}">
+                            ${insights.behavioral_analysis.anomaly_detected ? 'Yes ⚠️' : 'No ✅'}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <h6>Recommendations</h6>
+        <div class="recommendations mb-3">
+            ${insights.recommendations.map(rec => `
+                <div class="alert alert-${rec.priority === 'high' ? 'danger' : 'warning'} py-2">
+                    <strong>${rec.type.replace('_', ' ').toUpperCase()}:</strong> ${rec.message}<br>
+                    <small><strong>Suggested Action:</strong> ${rec.action}</small>
+                </div>
+            `).join('')}
+            ${insights.recommendations.length === 0 ? '<p class="text-muted">No specific recommendations at this time.</p>' : ''}
+        </div>
+        
+        <h6>Technical Details</h6>
+        <div class="card">
+            <div class="card-body">
+                <p class="mb-0 small text-muted">${insights.behavioral_analysis.analysis_details || 'No additional details available.'}</p>
+            </div>
+        </div>
+    `;
+    
+    new bootstrap.Modal(modal).show();
+}
+
+async function runBatchAnalysis() {
+    if (!confirm('Run ML analysis on recent applications? This may take a few moments.')) {
+        return;
+    }
+    
+    try {
+        const recentIds = allApplications.slice(0, 20).map(app => app.id);
+        
+        // FIXED: Using the correct URL path from your backend
+        const response = await fetch('/admin/batch-analysis/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({ application_ids: recentIds })
+        });
+        
+        const results = await response.json();
+        
+        if (response.ok) {
+            displayBatchResults(results);
+        } else {
+            showError('Batch analysis failed: ' + results.error);
+        }
+    } catch (error) {
+        showError('Error running batch analysis');
+    }
+}
+
+function displayBatchResults(results) {
+    const modal = document.getElementById('batch-analysis-modal');
+    const content = document.getElementById('batch-results-content');
+    
+    content.innerHTML = `
+        <h6>Analysis Summary</h6>
+        <div class="row mb-3">
+            <div class="col-3">
+                <div class="text-center">
+                    <h4 class="text-primary">${results.summary.total_analyzed}</h4>
+                    <small>Analyzed</small>
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="text-center">
+                    <h4 class="text-danger">${results.summary.high_risk_count}</h4>
+                    <small>High Risk</small>
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="text-center">
+                    <h4 class="text-warning">${results.summary.anomalies_detected}</h4>
+                    <small>Anomalies</small>
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="text-center">
+                    <h4 class="text-info">${results.summary.avg_risk_adjustment.toFixed(1)}</h4>
+                    <small>Avg Adjustment</small>
+                </div>
+            </div>
+        </div>
+        
+        <h6>Detailed Results</h6>
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Applicant</th>
+                        <th>Original Risk</th>
+                        <th>Enhanced Risk</th>
+                        <th>Adjustment</th>
+                        <th>Behavioral Risk</th>
+                        <th>Anomaly</th>
+                        <th>Recommendation</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${results.results.map(result => `
+                        <tr>
+                            <td>${result.applicant_name || 'N/A'}</td>
+                            <td>${result.original_risk || 'N/A'}</td>
+                            <td><strong>${result.enhanced_risk || 'N/A'}</strong></td>
+                            <td class="${result.ml_adjustment > 10 ? 'text-warning' : 'text-success'}">+${result.ml_adjustment || 0}</td>
+                            <td><span class="badge bg-${result.behavioral_risk === 'high' ? 'danger' : result.behavioral_risk === 'medium' ? 'warning' : 'success'}">${result.behavioral_risk || 'N/A'}</span></td>
+                            <td>${result.anomaly_detected ? '⚠️' : '✅'}</td>
+                            <td>${result.recommendation}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+    
+    new bootstrap.Modal(modal).show();
+}
+
+function refreshDashboard() {
+    loadDashboardData();
+}
+
+function viewDetails(applicationId) {
+    // Instead of opening a new tab with JSON, show details in a modal
+    showApplicationDetails(applicationId);
+}
+
+async function showApplicationDetails(applicationId) {
+    try {
+        const response = await fetch(`/admin/application/${applicationId}/`, {
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to load application details');
+        }
+        
+        const data = await response.json();
+        displayApplicationDetailsModal(data);
+        
+    } catch (error) {
+        console.error('Error loading application details:', error);
+        showError('Failed to load application details');
+    }
+}
+
+function displayApplicationDetailsModal(data) {
+    const app = data.application;
+    const visitor = data.visitor_info;
+    const signals = data.smart_signals;
+    const mlAnalysis = data.ml_analysis;
+    const fraudAlerts = data.fraud_alerts || [];
+    
+    // Create or get the application details modal
+    let modal = document.getElementById('application-details-modal');
+    if (!modal) {
+        // Create the modal if it doesn't exist
+        const modalHtml = `
+            <div class="modal fade" id="application-details-modal" tabindex="-1">
+                <div class="modal-dialog modal-xl">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Application Details</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body" id="application-details-body">
+                            <!-- Content will be populated here -->
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            <button type="button" class="btn btn-primary" onclick="exportSingleApplication('${app.id}')">
+                                <i class="fas fa-download"></i> Export Details
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modal = document.getElementById('application-details-modal');
+    }
+    
+    const modalBody = document.getElementById('application-details-body');
+    modalBody.innerHTML = `
+        <!-- Application Overview -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-user"></i> Applicant Information</h6>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-borderless table-sm">
+                            <tr><td><strong>Full Name:</strong></td><td>${app.full_name}</td></tr>
+                            <tr><td><strong>Email:</strong></td><td>${app.email}</td></tr>
+                            <tr><td><strong>Phone:</strong></td><td>${app.phone}</td></tr>
+                            <tr><td><strong>Address:</strong></td><td>${app.address}</td></tr>
+                            <tr><td><strong>Employment:</strong></td><td>${app.employment_status}</td></tr>
+                            <tr><td><strong>Occupation:</strong></td><td>${app.occupation}</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-money-bill-wave"></i> Loan Details</h6>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-borderless table-sm">
+                            <tr><td><strong>Amount:</strong></td><td>₦${parseFloat(app.amount_requested).toLocaleString()}</td></tr>
+                            <tr><td><strong>Duration:</strong></td><td>${app.repayment_duration}</td></tr>
+                            <tr><td><strong>Purpose:</strong></td><td>${app.purpose}</td></tr>
+                            <tr><td><strong>Status:</strong></td><td><span class="badge bg-${getStatusColor(app.status)}">${app.status}</span></td></tr>
+                            <tr><td><strong>Risk Score:</strong></td><td><span class="badge ${getRiskClass(app.risk_score)}">${app.risk_score}/100</span></td></tr>
+                            <tr><td><strong>Applied:</strong></td><td>${new Date(app.application_date).toLocaleString()}</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Visitor Information -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-fingerprint"></i> Visitor Analysis</h6>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-borderless table-sm">
+                            <tr><td><strong>Visitor ID:</strong></td><td><code>${visitor.visitor_id}</code></td></tr>
+                            <tr><td><strong>IP Address:</strong></td><td>${visitor.ip_address}</td></tr>
+                            <tr><td><strong>Public IP:</strong></td><td>${visitor.public_ip}</td></tr>
+                            <tr><td><strong>Browser:</strong></td><td>${visitor.browser_name}</td></tr>
+                            <tr><td><strong>OS:</strong></td><td>${visitor.os}</td></tr>
+                            <tr><td><strong>Device:</strong></td><td>${visitor.device}</td></tr>
+                            <tr><td><strong>Applications:</strong></td><td>${visitor.application_count}</td></tr>
+                            <tr><td><strong>Confidence:</strong></td><td>${(visitor.confidence_score * 100).toFixed(1)}%</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-shield-alt"></i> Security Signals</h6>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-borderless table-sm">
+                            <tr><td><strong>Bot:</strong></td><td>${signals.bot_detected ? '<span class="text-danger">Yes ⚠️</span>' : '<span class="text-success">No ✅</span>'}</td></tr>
+                            <tr><td><strong>VPN:</strong></td><td>${signals.vpn_detected ? '<span class="text-danger">Yes ⚠️</span>' : '<span class="text-success">No ✅</span>'}</td></tr>
+                            <tr><td><strong>Proxy:</strong></td><td>${signals.proxy_detected ? '<span class="text-warning">Yes ⚠️</span>' : '<span class="text-success">No ✅</span>'}</td></tr>
+                            <tr><td><strong>Tor:</strong></td><td>${signals.tor_detected ? '<span class="text-danger">Yes ⚠️</span>' : '<span class="text-success">No ✅</span>'}</td></tr>
+                            <tr><td><strong>Tampering:</strong></td><td>${signals.tampering_detected ? '<span class="text-danger">Yes ⚠️</span>' : '<span class="text-success">No ✅</span>'}</td></tr>
+                            <tr><td><strong>Incognito:</strong></td><td>${signals.incognito ? '<span class="text-info">Yes</span>' : '<span class="text-muted">No</span>'}</td></tr>
+                            <tr><td><strong>IP Blocklisted:</strong></td><td>${signals.ip_blocklisted ? '<span class="text-danger">Yes ⚠️</span>' : '<span class="text-success">No ✅</span>'}</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-brain"></i> ML Analysis</h6>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-borderless table-sm">
+                            <tr><td><strong>Anomaly Score:</strong></td><td><code>${mlAnalysis.anomaly_score?.toFixed(3) || 'N/A'}</code></td></tr>
+                            <tr><td><strong>Anomaly Detected:</strong></td><td>${mlAnalysis.anomaly_detected ? '<span class="text-danger">Yes ⚠️</span>' : '<span class="text-success">No ✅</span>'}</td></tr>
+                            <tr><td><strong>Cluster:</strong></td><td>${mlAnalysis.cluster_label}</td></tr>
+                            <tr><td><strong>Behavioral Risk:</strong></td><td><span class="badge bg-${mlAnalysis.behavioral_risk === 'high' ? 'danger' : mlAnalysis.behavioral_risk === 'medium' ? 'warning' : 'success'}">${mlAnalysis.behavioral_risk || 'Unknown'}</span></td></tr>
+                            <tr><td><strong>Risk Adjustment:</strong></td><td>+${data.ml_risk_adjustment || 0}</td></tr>
+                            <tr><td><strong>Enhanced Score:</strong></td><td><strong>${data.enhanced_risk_score || app.risk_score}</strong></td></tr>
+                        </table>
+                        <small class="text-muted">${mlAnalysis.analysis_details || 'No additional details'}</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Fraud Alerts -->
+        ${fraudAlerts.length > 0 ? `
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-exclamation-triangle text-warning"></i> Fraud Alerts</h6>
+                    </div>
+                    <div class="card-body">
+                        ${fraudAlerts.map(alert => `
+                            <div class="alert alert-warning">
+                                <strong>Alert #${alert.id}:</strong> ${alert.reason}<br>
+                                <small><strong>Risk Score:</strong> ${alert.risk_score} | <strong>Status:</strong> ${alert.status} | <strong>Date:</strong> ${new Date(alert.created_at).toLocaleString()}</small>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        </div>
+        ` : ''}
+        
+        <!-- Location Information -->
+        ${data.metadata?.ipInfo ? `
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="fas fa-map-marker-alt"></i> Location Information</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <table class="table table-borderless table-sm">
+                                    <tr><td><strong>Country:</strong></td><td>${data.metadata.ipInfo.geolocation?.country?.name || 'Unknown'}</td></tr>
+                                    <tr><td><strong>City:</strong></td><td>${data.metadata.ipInfo.geolocation?.city?.name || 'Unknown'}</td></tr>
+                                    <tr><td><strong>Timezone:</strong></td><td>${data.metadata.ipInfo.geolocation?.timezone || 'Unknown'}</td></tr>
+                                </table>
+                            </div>
+                            <div class="col-md-6">
+                                <table class="table table-borderless table-sm">
+                                    <tr><td><strong>ISP:</strong></td><td>${data.metadata.ipInfo.asn?.name || 'Unknown'}</td></tr>
+                                    <tr><td><strong>ASN:</strong></td><td>${data.metadata.ipInfo.asn?.asn || 'Unknown'}</td></tr>
+                                    <tr><td><strong>Datacenter:</strong></td><td>${data.metadata.ipInfo.datacenter?.result ? 'Yes' : 'No'}</td></tr>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        ` : ''}
+    `;
+    
+    new bootstrap.Modal(modal).show();
+}
+
+function exportSingleApplication(applicationId) {
+    // Export single application details
+    window.location.href = `/admin/export-applications/?application_id=${applicationId}`;
+}
+
+function exportData() {
+    // FIXED: Using the correct URL path from your backend
+    window.location.href = '/admin/export-applications/';
+}
+
+function showError(message) {
+    // Simple error display - you can enhance this
+    alert('Error: ' + message);
+}
+
+// Initialize dashboard
+document.addEventListener('DOMContentLoaded', function() {
+    loadDashboardData();
+    
+    // Refresh every 30 seconds
+    setInterval(loadDashboardData, 30000);
+});
+</script>
+{% endblock %}
